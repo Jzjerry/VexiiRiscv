@@ -63,3 +63,7 @@ regression/
 tmp/
 /archive.tar.gz
 *.out32
+
+# IceSoc
+*.pcf
+*.asc

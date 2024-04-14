@@ -57,7 +57,7 @@ ${TARGET}.json: ${RTL}
 
 ${TARGET}.asc: ${CONSTR} ${TARGET}.json
 	@echo "Place&Route ing..."
-	nextpnr-ice40 ${PNRFLAGS} --up5k  --pcf $< --json $(filter-out $<,$^) --asc $@ 
+	nextpnr-ice40 ${PNRFLAGS} --up5k --pcf $< --json $(filter-out $<,$^) --asc $@ 
 
 ${TARGET}.bin: ${TARGET}.asc
 	@echo "Compiling $@"

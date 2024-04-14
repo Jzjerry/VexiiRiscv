@@ -14,6 +14,7 @@ import spinal.lib.com.uart.sim.{UartDecoder, UartEncoder}
 import spinal.lib.cpu.riscv.RiscvHart
 import spinal.lib.cpu.riscv.debug.DebugModuleFiber
 import spinal.lib.eda.bench.Rtl
+import spinal.lib.misc.plugin.Hostable
 import spinal.lib.misc.{Elf, PathTracer, TilelinkClintFiber}
 import spinal.lib.misc.plic.TilelinkPlicFiber
 import spinal.lib.system.tag.PMA
@@ -27,8 +28,9 @@ import vexiiriscv._
 
 import java.io.File
 import scala.collection.mutable.ArrayBuffer
+import scala.annotation.meta.param
 
-class IceSoc extends Component {
+class IceSoc(cpuParam: ParamSimple) extends Component {
   val asyncReset = in Bool()
   val cd100 = ClockDomain.external("cd100", withReset = false, frequency = FixedFrequency(100 MHz))
 
@@ -39,16 +41,8 @@ class IceSoc extends Component {
   val main = mainResetCtrl.cd on new Area {
     val sharedBus = tilelink.fabric.Node()
 
-    val param = new ParamSimple()
-    param.fetchForkAt = 1
-    param.withMul = true
-    param.withDiv = true
-    param.fetchL1Enable = true
-    param.fetchL1Ways = 1
-    param.lsuPmaAt = 1
-    param.lsuForkAt = 1
-    param.relaxedBranch = true
-    
+
+    val param = cpuParam
     val plugins = param.plugins()
     val cpu = new TilelinkVexiiRiscvFiber(plugins)
     sharedBus << cpu.buses
@@ -88,15 +82,27 @@ class IceSoc extends Component {
 
 object IceSocGen extends App{
   val config = SpinalConfig(targetDirectory = "hw/rtl").addStandardMemBlackboxing(blackboxOnlyIfRequested)
+
+  // Default Param for IceSoc
+  val param = new ParamSimple()
+  param.fetchForkAt = 1
+  param.withMul = true
+  param.withDiv = true
+  param.fetchL1Enable = true
+  param.fetchL1Ways = 1
+  param.lsuPmaAt = 1
+  param.lsuForkAt = 1
+  param.relaxedBranch = true
+
+  assert(new scopt.OptionParser[Unit]("VexiiRiscv") {
+    help("help").text("prints this usage text")
+    param.addOptions(this)
+  }.parse(args, Unit).nonEmpty)
   val report = SpinalVerilog(config){
-    new IceSoc()
+    new IceSoc(param)
   }
 
   val h = report.toplevel.main.cpu.logic.core.host
   val path = PathTracer.impl(h[SrcPlugin].logic.addsub.rs2Patched, h[TrapPlugin].logic.harts(0).trap.pending.state.tval)
   println(path.report)
-}
-
-object RateIceSocCore extends App{
-  val core = VexiiRiscv((new IceSoc()).main.plugins)
 }

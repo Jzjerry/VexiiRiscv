@@ -41,9 +41,8 @@ class IceSoc(cpuParam: ParamSimple, blackboxRam: Boolean) extends Component {
   val main = mainResetCtrl.cd on new Area {
     val sharedBus = tilelink.fabric.Node()
 
+    val plugins = cpuParam.plugins()
 
-    val param = cpuParam
-    val plugins = param.plugins()
     val cpu = new TilelinkVexiiRiscvFiber(plugins)
     sharedBus << cpu.buses
     cpu.dBus.setDownConnection(a = StreamPipe.S2M)
@@ -53,7 +52,7 @@ class IceSoc(cpuParam: ParamSimple, blackboxRam: Boolean) extends Component {
 
     // Handle all the IO / Peripheral things
     val peripheral = new Area {
-      val busXlen = Node().forceDataWidth(param.xlen)
+      val busXlen = Node().forceDataWidth(cpuParam.xlen)
       busXlen << sharedBus
       busXlen.setUpConnection(a = StreamPipe.HALF, d = StreamPipe.HALF)
 
@@ -87,14 +86,14 @@ object IceSocGen extends App{
 
   // Default Param for IceSoc
   val param = new ParamSimple()
-  param.fetchForkAt = 1
-  param.withMul = true
-  param.withDiv = true
-  param.fetchL1Enable = true
-  param.fetchL1Ways = 1
-  param.lsuPmaAt = 1
-  param.lsuForkAt = 1
-  param.relaxedBranch = true
+  // param.fetchForkAt = 1
+  // param.withMul = true
+  // param.withDiv = true
+  // param.fetchL1Enable = true
+  // param.fetchL1Ways = 1
+  // param.lsuPmaAt = 1
+  // param.lsuForkAt = 1
+  // param.relaxedBranch = true
   
   var blackboxRam = false
 
@@ -109,5 +108,5 @@ object IceSocGen extends App{
 
   val h = report.toplevel.main.cpu.logic.core.host
   val path = PathTracer.impl(h[SrcPlugin].logic.addsub.rs2Patched, h[TrapPlugin].logic.harts(0).trap.pending.state.tval)
-  println(path.report)
+  // println(path.report)
 }

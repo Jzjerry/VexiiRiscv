@@ -30,7 +30,7 @@ import java.io.File
 import scala.collection.mutable.ArrayBuffer
 import scala.annotation.meta.param
 
-class IceSoc(cpuParam: ParamSimple) extends Component {
+class IceSoc(cpuParam: ParamSimple, blackboxRam: Boolean) extends Component {
   val asyncReset = in Bool()
   val cd100 = ClockDomain.external("cd100", withReset = false, frequency = FixedFrequency(100 MHz))
 
@@ -73,9 +73,11 @@ class IceSoc(cpuParam: ParamSimple) extends Component {
       val cpuPlic = cpu.bind(plic)
       val cpuClint = cpu.bind(clint)
     }
-
-    val patches = Fiber build new Area{
-      ram.thread.logic.mem.generateAsBlackBox()
+    println(blackboxRam)
+    if (blackboxRam) {
+      val patches = Fiber build new Area{
+        ram.thread.logic.mem.generateAsBlackBox()
+      }
     }
   }
 }
@@ -93,13 +95,16 @@ object IceSocGen extends App{
   param.lsuPmaAt = 1
   param.lsuForkAt = 1
   param.relaxedBranch = true
+  
+  var blackboxRam = false
 
   assert(new scopt.OptionParser[Unit]("VexiiRiscv") {
     help("help").text("prints this usage text")
+    opt[Unit]("blackboxram").action{(v, c) => blackboxRam = true}.text("Blackbox the ram")
     param.addOptions(this)
   }.parse(args, Unit).nonEmpty)
   val report = SpinalVerilog(config){
-    new IceSoc(param)
+    new IceSoc(param, blackboxRam)
   }
 
   val h = report.toplevel.main.cpu.logic.core.host

@@ -106,7 +106,7 @@ object IceSocGen extends App{
     new IceSoc(param, blackboxRam)
   }
 
-  val h = report.toplevel.main.cpu.logic.core.host
-  val path = PathTracer.impl(h[SrcPlugin].logic.addsub.rs2Patched, h[TrapPlugin].logic.harts(0).trap.pending.state.tval)
+  // val h = report.toplevel.main.cpu.logic.core.host
+  // val path = PathTracer.impl(h[SrcPlugin].logic.addsub.rs2Patched, h[TrapPlugin].logic.harts(0).trap.pending.state.tval)
   // println(path.report)
 }

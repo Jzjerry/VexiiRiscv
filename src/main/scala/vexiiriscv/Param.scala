@@ -118,6 +118,9 @@ class ParamSimple(){
   var embeddedJtagCd: ClockDomain = null
   var embeddedJtagNoTapCd: ClockDomain = null
 
+  // Jzjerry Customized Parameters
+  var withBitNet = 0 // 0: disable, 1: no buffer, 2: buffered
+
   def fetchMemDataWidth = 32*decoders max fetchMemDataWidthMin
   def lsuMemDataWidth = xlen max lsuMemDataWidthMin
   def memDataWidth = List(fetchMemDataWidth, lsuMemDataWidth).max
@@ -317,6 +320,7 @@ class ParamSimple(){
     opt[Int] ("debug-triggers") action { (v, c) => privParam.debugTriggers = v }
     opt[Unit]("debug-triggers-lsu") action { (v, c) => privParam.debugTriggersLsu = true }
     opt[Unit]("debug-jtag-tap") action { (v, c) => embeddedJtagTap = true }
+    opt[Int]("bitnet") action { (v, c) => withBitNet = v }
   }
 
   def plugins(hartId : Int = 0) = pluginsArea(hartId).plugins
@@ -476,6 +480,9 @@ class ParamSimple(){
     plugins += lane0
 
 //    plugins += new RedoPlugin("lane0")
+    if(withBitNet==1) plugins += new BitNetPlugin(early0)
+    else if(withBitNet==2) plugins += new BitNetBufferPlugin(early0)
+
     plugins += new SrcPlugin(early0, executeAt = 0, relaxedRs = relaxedSrc)
     plugins += new IntAluPlugin(early0, formatAt = 0)
     plugins += shifter(early0, formatAt = relaxedShift.toInt)

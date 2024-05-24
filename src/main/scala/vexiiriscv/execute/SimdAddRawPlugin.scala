@@ -21,33 +21,34 @@ object SimdAddRaw{
 class SimdAddRawPlugin(val layer : LaneLayer) extends FiberPlugin  {
   import SimdAddRaw._
   val logic = during setup new Area {
-    val wbp = host.find[WriteBackPlugin](p => p.rf == IntRegFile && p.lane == layer.el)
-    val earlyLock = retains(layer.el.uopLock, wbp.elaborationLock)
-    val lateLock = retains(layer.el.pipelineLock)
+    val wbp = host.find[WriteBackPlugin](p => p.rf == IntRegFile && p.lane == layer.lane)
+    val earlyLock = retains(layer.lane.uopLock, wbp.elaborationLock)
+    val lateLock = retains(layer.lane.pipelineLock)
     awaitBuild()
 
     val add4 = layer.add(ADD4)
 
-    val SEL = Payload(Bool())
-    layer.el.setDecodingDefault(SEL, False)
-    val wb = wbp.createPort(at = 0)
-
-    add4.addDecoding(SEL -> True)
     add4.addRsSpec(RS1, executeAt = 0)
     add4.addRsSpec(RS2, executeAt = 0)
-    wbp.addMicroOp(wb, add4)
     add4.setCompletion(0)
 //    add4.mayFlushUpTo(0)
 //    add4.dontFlushFrom(0)
 //    add4.reserve(something, at=0)
+
+    val wb = wbp.createPort(at = 0)
+    wbp.addMicroOp(wb, add4)
+
+    val SEL = Payload(Bool())
+    layer.lane.setDecodingDefault(SEL, False)
+    add4.addDecoding(SEL -> True)
 
     earlyLock.release()
 
     //Let's define some logic in the execute lane [0]
     val process = new layer.Execute(id = 0) {
       //Get the RISC-V RS1/RS2 values from the register file
-      val rs1 = layer.el(IntRegFile, RS1).asUInt
-      val rs2 = layer.el(IntRegFile, RS2).asUInt
+      val rs1 = layer.lane(IntRegFile, RS1).asUInt
+      val rs2 = layer.lane(IntRegFile, RS2).asUInt
 
       //Do some computation
       val rd = UInt(32 bits)

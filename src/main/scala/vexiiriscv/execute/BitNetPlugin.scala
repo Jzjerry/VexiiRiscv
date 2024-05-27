@@ -14,10 +14,59 @@ import vexiiriscv.tester.TestOptions
 object BitNetPlugin{
   //Define the instruction type and encoding that we wll use
   val BNSUM   = IntRegFile.TypeR(M"0000000----------001-----0001011")
+  def bitnetadd4(a: UInt, w : UInt, QType : String = "1.5b") : SInt = {
+    val w_width = QType match {
+      case "1b" => 1
+      case "1.5b" => 2
+      case "2b" => 2
+    }
+    // We assume the little-endian format
+    val a_vec = Range(4, 0, -1).map{i => a(i*8-1 downto i*8-8).asSInt}
+    // val w_vec = Range(4, 0, -1).map{i => w(i*w_width-1 downto (i-1)*w_width)} 
+    val w_vec = Range(1, 5, 1).map{i => w(i*w_width-1 downto (i-1)*w_width)} 
+    val a_tmp = a_vec.zip(w_vec).map{
+        case (a_i, w_i) => {
+            val a_tmp_i = SInt(8 bits)
+            if (w_width == 2){
+              when(w_i === B"01".asUInt){
+                  a_tmp_i := a_i
+              }.elsewhen(w_i === B"11".asUInt){
+                  a_tmp_i := -a_i
+              }.elsewhen(w_i === B"10".asUInt){
+                if(QType == "1.5b"){
+                  a_tmp_i := 0
+                }
+                else{
+                  a_tmp_i := -(a_i |<< 1)
+                }
+              }.otherwise{
+                  a_tmp_i := 0
+              }
+            } else{
+              when(w_i === B"0".asUInt){
+                a_tmp_i := a_i
+              }.otherwise{
+                a_tmp_i := -a_i
+              }
+            }
+            a_tmp_i
+        }
+    }
+    a_tmp.reduce(_ +^ _)
+  }
 }
 
 
-class BitNetPlugin(val layer : LaneLayer) extends ExecutionUnitElementSimple(layer)  {
+class BitNetPlugin(
+  val layer : LaneLayer, 
+  val QType : String = "1.5b") extends ExecutionUnitElementSimple(layer)  {
+
+
+  val w_width = QType match {
+    case "1b" => 1
+    case "1.5b" => 2
+    case "2b" => 2
+  }
 
   val logic = during setup new Logic {
     awaitBuild()
@@ -48,24 +97,7 @@ class BitNetPlugin(val layer : LaneLayer) extends ExecutionUnitElementSimple(lay
       //Do some computation
       val rd = SInt(32 bits)
 
-      val a_vec = Range(4, 0, -1).map{i => rs1(i*8-1 downto i*8-8).asSInt}
-      // val w_vec = Range(4, 0, -1).map{i => rs2(i*2-1 downto i*2-2)} 
-      val w_vec = Range(1, 5, 1).map{i => rs2(i*2-1 downto i*2-2)} 
-
-      val a_tmp = a_vec.zip(w_vec).map{
-          case (a_i, w_i) => {
-              val a_tmp_i = SInt(8 bits)
-                  when(w_i === B"01".asUInt){
-                  a_tmp_i := a_i
-              }.elsewhen(w_i === B"11".asUInt){
-                  a_tmp_i := -a_i
-              }.otherwise{
-                  a_tmp_i := 0
-              }
-              a_tmp_i
-          }
-      }
-      rd := a_tmp.reduce(_ +^ _).resized
+      rd := BitNetPlugin.bitnetadd4(rs1, rs2, QType).resized
 
       //Provide the computation value for the writeback
       wb.valid := SEL

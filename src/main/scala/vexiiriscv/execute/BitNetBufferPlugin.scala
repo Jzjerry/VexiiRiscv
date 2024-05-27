@@ -5,6 +5,7 @@ import spinal.lib.misc.pipeline._
 import vexiiriscv.decode
 import vexiiriscv.riscv._
 
+import vexiiriscv.execute._
 
 object BitNetBufferPlugin extends AreaObject{
   //Define the instruction type and encoding that we wll use
@@ -15,9 +16,16 @@ object BitNetBufferPlugin extends AreaObject{
   val RESULT = Payload(SInt(32 bits))
 }
 
-class BitNetBufferPlugin(val layer : LaneLayer, 
+class BitNetBufferPlugin(val layer : LaneLayer,
+    val QType : String = "1.5b",
     val bufferWidth : Int = 8) extends ExecutionUnitElementSimple(layer)  {
 
+
+  val w_width = QType match {
+    case "1b" => 1
+    case "1.5b" => 2
+    case "2b" => 2
+  }
 
   val logic = during setup new Logic {
     awaitBuild()
@@ -38,37 +46,35 @@ class BitNetBufferPlugin(val layer : LaneLayer,
 
     //Let's define some logic in the execute lane [0]
     val compute = new el.Execute(id = 0) {
-      val buffer = Reg(Bits(2*bufferWidth bits)) init(0)
+      val buffer = Reg(Bits(w_width*bufferWidth bits)) init(0)
       //Get the RISC-V RS1/RS2 values from the register file
       val rs1 = el(IntRegFile, RS1).asUInt
       val rs2 = el(IntRegFile, RS2).asUInt
 
-      val data = rs1 ## rs2
+      import BitNetPlugin.bitnetadd4
 
       //Do some computation
       val rd = SInt(32 bits)
 
-      val a_vec = Range(8, 0, -1).map{i => data(i*8-1 downto i*8-8).asSInt}
-      // val w_vec = Range(1, 9, 1).map{i => buffer(i*2-1 downto i*2-2)}
-      val w_vec = Range(8, 0, -1).map{i => buffer(i*2-1 downto i*2-2)}
+      val data = (rs1 ## rs2).asBits
 
-      val a_tmp = a_vec.zip(w_vec).map{
-          case (a_i, w_i) => {
-              val a_tmp_i = SInt(8 bits)
-                  when(w_i === B"01"){
-                  a_tmp_i := a_i
-              }.elsewhen(w_i === B"11"){
-                  a_tmp_i := -a_i
-              }.otherwise{
-                  a_tmp_i := 0
-              }
-              a_tmp_i
-          }
+      // val a_vec = Range(8, 0, -1).map{i => data(i*8-1 downto i*8-8).asSInt}
+      // val w_vec = Range(8, 0, -1).map{i => buffer(i*w_width-1 downto (i-1)*w_width)}
+
+      // We assume the little-endian format
+      val buffer_high = buffer(8*w_width - 1 downto 4*w_width).asUInt
+      val buffer_low = buffer(4*w_width - 1 downto 0).asUInt
+
+      if(QType == "1b"){
+        RESULT := (bitnetadd4(rs1, buffer_high, QType) + 
+                bitnetadd4(rs2, buffer_low, QType)).resized
+      } else {
+        RESULT := (bitnetadd4(rs1, buffer_low, QType) + 
+                  bitnetadd4(rs2, buffer_high, QType)).resized
       }
-      RESULT := a_tmp.reduce(_ +^ _).resized
 
       when (SEL & STORE){
-        buffer := data(2*bufferWidth-1 downto 0).asBits
+        buffer := data(w_width*bufferWidth-1 downto 0)
       }
     }
     val store = new el.Execute(id = 0) {

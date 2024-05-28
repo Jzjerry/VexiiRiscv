@@ -55,15 +55,21 @@ class BitNetBufferPlugin(val layer : LaneLayer,
 
       //Do some computation
       val rd = SInt(32 bits)
+      val offset = Reg(UInt(log2Up(bufferWidth/8) bits)) init(bufferWidth/8-1)
 
+      if (bufferWidth > 8){
+        when (SEL & !STORE){
+          offset := offset - 1
+        }
+      }
+
+      val addr_offset = offset<<log2Up(8*w_width)
       val data = (rs1 ## rs2).asBits
 
-      // val a_vec = Range(8, 0, -1).map{i => data(i*8-1 downto i*8-8).asSInt}
-      // val w_vec = Range(8, 0, -1).map{i => buffer(i*w_width-1 downto (i-1)*w_width)}
-
       // We assume the little-endian format
-      val buffer_high = buffer(8*w_width - 1 downto 4*w_width).asUInt
-      val buffer_low = buffer(4*w_width - 1 downto 0).asUInt
+
+      val buffer_high = buffer(addr_offset + 4*w_width, 4*w_width bits).asUInt
+      val buffer_low = buffer(addr_offset, 4*w_width bits).asUInt
 
       if(QType == "1b"){
         RESULT := (bitnetadd4(rs1, buffer_high, QType) + 
@@ -74,6 +80,7 @@ class BitNetBufferPlugin(val layer : LaneLayer,
       }
 
       when (SEL & STORE){
+        // Store the weight to the buffer
         buffer := data(w_width*bufferWidth-1 downto 0)
       }
     }

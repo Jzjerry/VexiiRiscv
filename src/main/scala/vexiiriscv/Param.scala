@@ -120,6 +120,7 @@ class ParamSimple(){
 
   // Jzjerry Customized Parameters
   var withBitNet = 0 // 0: disable, 1: no buffer, 2: buffered
+  var qType = "1.5b"
 
   def fetchMemDataWidth = 32*decoders max fetchMemDataWidthMin
   def lsuMemDataWidth = xlen max lsuMemDataWidthMin
@@ -321,6 +322,7 @@ class ParamSimple(){
     opt[Unit]("debug-triggers-lsu") action { (v, c) => privParam.debugTriggersLsu = true }
     opt[Unit]("debug-jtag-tap") action { (v, c) => embeddedJtagTap = true }
     opt[Int]("bitnet") action { (v, c) => withBitNet = v }
+    opt[String]("bitnet-qtype") action { (v, c) => qType = v }
   }
 
   def plugins(hartId : Int = 0) = pluginsArea(hartId).plugins
@@ -480,8 +482,8 @@ class ParamSimple(){
     plugins += lane0
 
 //    plugins += new RedoPlugin("lane0")
-    if(withBitNet==1) plugins += new BitNetPlugin(early0)
-    else if(withBitNet==2) plugins += new BitNetBufferPlugin(early0)
+    if(withBitNet==4) plugins += new BitNetPlugin(early0, qType)
+    else if(withBitNet>=8) plugins += new BitNetBufferPlugin(early0, qType, withBitNet)
 
     plugins += new SrcPlugin(early0, executeAt = 0, relaxedRs = relaxedSrc)
     plugins += new IntAluPlugin(early0, formatAt = 0)

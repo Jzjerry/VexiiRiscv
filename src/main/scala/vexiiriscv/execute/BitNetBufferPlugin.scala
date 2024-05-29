@@ -26,7 +26,9 @@ class BitNetBufferPlugin(val layer : LaneLayer,
     case "1.5b" => 2
     case "2b" => 2
   }
-
+  assert(bufferWidth % 8 == 0, "Buffer width must be a multiple of 8")
+  assert(w_width == 1 || bufferWidth < 64, 
+    "Buffer width must be less than 64 when using 1.5-2b QType")
   val logic = during setup new Logic {
     awaitBuild()
     import SrcKeys._
@@ -55,11 +57,12 @@ class BitNetBufferPlugin(val layer : LaneLayer,
 
       //Do some computation
       val rd = SInt(32 bits)
-      val offset = Reg(UInt(log2Up(bufferWidth/8) bits)) init(bufferWidth/8-1)
+      val offset = Reg(UInt(log2Up(bufferWidth/8) bits)) init(0)
 
       if (bufferWidth > 8){
-        when (SEL & !STORE){
-          offset := offset - 1
+        when (isValid && SEL && !STORE){
+          offset := offset + 1
+          // report(L"Offset change: $offset")
         }
       }
 
@@ -79,9 +82,11 @@ class BitNetBufferPlugin(val layer : LaneLayer,
                   bitnetadd4(rs2, buffer_high, QType)).resized
       }
 
-      when (SEL & STORE){
+      when (isValid && SEL && STORE){
         // Store the weight to the buffer
+        offset := 0
         buffer := data(w_width*bufferWidth-1 downto 0)
+        // report(L"Store buffer: $buffer")
       }
     }
     val store = new el.Execute(id = 0) {

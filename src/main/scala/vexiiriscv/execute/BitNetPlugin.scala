@@ -52,7 +52,7 @@ object BitNetPlugin{
             a_tmp_i
         }
     }
-    a_tmp.reduce(_ +^ _)
+    Vec(a_tmp).reduceBalancedTree(_ +^ _)
   }
 }
 

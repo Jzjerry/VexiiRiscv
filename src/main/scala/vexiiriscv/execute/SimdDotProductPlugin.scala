@@ -4,15 +4,35 @@ import spinal.core._
 import spinal.core.sim.SpinalSimConfig
 import spinal.lib._
 import spinal.lib.pipeline.Stageable
+import vexiiriscv.decode
+import spinal.lib.misc.pipeline._
 import vexiiriscv.Generate.args
 import vexiiriscv.{Global, ParamSimple, VexiiRiscv}
 import vexiiriscv.compat.MultiPortWritesSymplifier
 import vexiiriscv.riscv.{IntRegFile, RS1, RS2, Riscv}
 import vexiiriscv.tester.TestOptions
 
+object DOTPType extends SpinalEnum(defaultEncoding=binaryOneHot){
+  val W8, W4, W2 = newElement()
+}
+
 object SimdDotProductPlugin{
   //Define the instruction type and encoding that we wll use
-  val DOTP = IntRegFile.TypeR(M"1100000----------000-----0001011")
+  val DOTP8 = IntRegFile.TypeR(M"0000000----------100-----0001011") // 4  * 8-bit vector DotP 4  * 8-bit vector
+  val DOTP4 = IntRegFile.TypeR(M"0000000----------101-----0001011") // 8  * 4-bit vector DotP 8  * 4-bit vector
+  val DOTP2 = IntRegFile.TypeR(M"0000000----------110-----0001011") // 16 * 2-bit vector DotP 16 * 2-bit vector
+
+  val WIDTH = Payload(DOTPType())
+
+  def DotProductRes(op_a : Bits, op_b : Bits, bit_width : Int) : SInt = {
+
+    // Let's assume XLEN == 32 here
+    val vlen = 32 / bit_width
+    val a_vec = Range(vlen, 0, -1).map{i => op_a(i*bit_width-1 downto (i-1)*bit_width).asSInt}
+    val b_vec = Range(vlen, 0, -1).map{i => op_b(i*bit_width-1 downto (i-1)*bit_width).asSInt}
+    val a_tmp = Vec(a_vec.zip(b_vec).map{ case (a_i, b_i) => a_i * b_i})
+    a_tmp.reduceBalancedTree(_ +^ _).resize(32)
+  }
 }
 
 class SimdDotProductPlugin(val layer : LaneLayer) extends ExecutionUnitElementSimple(layer)  {
@@ -31,11 +51,13 @@ class SimdDotProductPlugin(val layer : LaneLayer) extends ExecutionUnitElementSi
     val wb = newWriteback(ifp, 0)
     
     //Specify that the current plugin will implement the ADD4 instruction
-    val dotp = add(SimdDotProductPlugin.DOTP).spec
+    import SimdDotProductPlugin._
+    import SrcKeys._
+    import DOTPType._
 
-    //We need to specify on which stage we start using the register file values
-    dotp.addRsSpec(RS1, executeAt = 0)
-    dotp.addRsSpec(RS2, executeAt = 0)
+    add(DOTP8).srcs(SRC1.RF, SRC2.RF).decode(WIDTH -> W8)
+    add(DOTP4).srcs(SRC1.RF, SRC2.RF).decode(WIDTH -> W4)
+    add(DOTP2).srcs(SRC1.RF, SRC2.RF).decode(WIDTH -> W2)
 
     //Now that we are done specifying everything about the instructions, we can release the Logic.uopRetainer
     //This will allow a few other plugins to continue their elaboration (ex : decoder, dispatcher, ...)
@@ -50,13 +72,13 @@ class SimdDotProductPlugin(val layer : LaneLayer) extends ExecutionUnitElementSi
       //Do some computation
       val rd = SInt(32 bits)
 
-      val a_vec = Range(4, 0, -1).map{i => rs1(i*8-1 downto i*8-8).asSInt}
-      val b_vec = Range(4, 0, -1).map{i => rs2(i*8-1 downto i*8-8).asSInt}
-
-      val a_tmp = Vec(a_vec.zip(b_vec).map{ case (a_i, b_i) => a_i * b_i})
-      val res = a_tmp.reduceBalancedTree(_ +^ _)
-
-      rd := res.resized
+      rd := WIDTH.muxList(
+          List(
+            (W8, SimdDotProductPlugin.DotProductRes(rs1, rs2, 8)),
+            (W4, SimdDotProductPlugin.DotProductRes(rs1, rs2, 4)),
+            (W2, SimdDotProductPlugin.DotProductRes(rs1, rs2, 2))
+            )
+        )
 
       //Provide the computation value for the writeback
       wb.valid := SEL

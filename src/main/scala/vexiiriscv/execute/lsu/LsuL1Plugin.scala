@@ -147,6 +147,8 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
     val events = pcs.map(p => new Area {
       val loadAccess = p.createEventPort(PerformanceCounterService.DCACHE_LOAD_ACCESS)
       val loadMiss = p.createEventPort(PerformanceCounterService.DCACHE_LOAD_MISS)
+      val loadCount = p.createEventPort(PerformanceCounterService.LOAD_COUNT)
+      val storeCount = p.createEventPort(PerformanceCounterService.STORE_COUNT)
     })
     earlyLock.release()
 
@@ -847,6 +849,8 @@ class LsuL1Plugin(val lane : ExecuteLaneService,
         events.map{e =>
           e.loadAccess := up.isFiring && SEL && LOAD
           e.loadMiss   := e.loadAccess && !HAZARD && MISS
+          e.loadCount  := e.loadAccess
+          e.storeCount := up.isFiring && SEL && STORE
         }
 
         val canRefill = reservation.win && !(refillWayNeedWriteback && writeback.full) && !refill.full && !writebackHazard

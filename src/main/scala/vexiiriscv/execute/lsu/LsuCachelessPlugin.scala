@@ -56,6 +56,7 @@ class LsuCachelessPlugin(var layer : LaneLayer,
     val ats = host[AddressTranslationService]
     val ts = host[TrapService]
     val ss = host[ScheduleService]
+    val pcs = host.get[PerformanceCounterService]
     val buildBefore = retains(elp.pipelineLock, ats.portsLock)
     val atsStorageLock = retains(ats.storageLock)
     val retainer = retains(elp.uopLock, srcp.elaborationLock, ifp.elaborationLock, ts.trapLock, ss.elaborationLock)
@@ -99,6 +100,11 @@ class LsuCachelessPlugin(var layer : LaneLayer,
     layer(Rvi.FENCE).setCompletion(forkAt)
 
     for(uop <- frontend.writingMem if layer(uop).completion.isEmpty) layer(uop).setCompletion(joinAt)
+    
+    val events = pcs.map(p => new Area {
+      val loadCount = p.createEventPort(PerformanceCounterService.LOAD_COUNT)
+      val storeCount = p.createEventPort(PerformanceCounterService.STORE_COUNT)
+    })
 
     retainer.release()
 
@@ -338,6 +344,11 @@ class LsuCachelessPlugin(var layer : LaneLayer,
         rsp.error := rspPayload.error
         rsp.redo := False
         rsp.waitAny := False
+      }
+
+      events.map{e =>
+        e.loadCount  := up.isFiring && SEL && LOAD
+        e.storeCount := up.isFiring && SEL && STORE
       }
     }
 

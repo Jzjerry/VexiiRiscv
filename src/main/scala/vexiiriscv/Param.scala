@@ -7,6 +7,7 @@ import spinal.lib.bus.tilelink.{M2sTransfers, SizeRange}
 import spinal.lib.cpu.riscv.debug.DebugTransportModuleParameter
 import spinal.lib.misc.plugin.Hostable
 import spinal.lib.system.tag.{PmaRegion, PmaRegionImpl}
+import spinal.lib.tools.binarySystem.BytesToLiteral
 import vexiiriscv._
 import vexiiriscv.decode.DecoderPlugin
 import vexiiriscv.execute._
@@ -19,7 +20,9 @@ import vexiiriscv.riscv.{FloatRegFile, IntRegFile}
 import vexiiriscv.schedule.DispatchPlugin
 import vexiiriscv.test.WhiteboxerPlugin
 
+import java.security.MessageDigest
 import scala.collection.mutable.ArrayBuffer
+import scala.util.Random
 
 object ParamSimple{
 
@@ -107,6 +110,7 @@ class ParamSimple(){
   var relaxedSrc = true
   var relaxedBtb = false
   var relaxedDiv = false
+  var relaxedMulInputs = false
   var allowBypassFrom = 100 //100 => disabled
   var additionalPerformanceCounters = 0
   var withPerformanceCounters = false
@@ -220,7 +224,7 @@ class ParamSimple(){
     lsuL1Ways = 4
     lsuL1RefillCount = 8
     lsuL1WritebackCount = 8
-    lsuL1Coherency = false
+//    lsuL1Coherency = true
 //    lsuStoreBufferSlots = 2
 //    lsuStoreBufferOps = 32
     lsuStoreBufferSlots = 4
@@ -296,6 +300,103 @@ class ParamSimple(){
   }
 
 
+  def withRvm(): Unit = {
+    withMul = true
+    withDiv = true
+  }
+
+  def withBranchPredicton(): Unit = {
+    withBtb = true
+    withGShare = true
+    withRas = true
+  }
+
+  def withCaches(): Unit = {
+    fetchL1Enable = true
+    fetchL1Sets = 64
+    fetchL1Ways = 2
+
+    lsuL1Enable = true
+    lsuL1Sets = 64
+    lsuL1Ways = 2
+
+    withLsuBypass = true
+  }
+
+  def withLinux(): Unit = {
+    privParam.withSupervisor = true
+    privParam.withUser = true;
+    withMmu = true
+  }
+
+  def withMmuSyncRead(): Unit = {
+    fetchTsp = MmuStorageParameter(
+      levels = List(
+        MmuStorageLevel(
+          id = 0,
+          ways = 2,
+          depth = 64
+        ),
+        MmuStorageLevel(
+          id = 1,
+          ways = 1,
+          depth = 64
+        )
+      ),
+      priority = 0
+    )
+
+    lsuTsp = MmuStorageParameter(
+      levels = List(
+        MmuStorageLevel(
+          id = 0,
+          ways = 2,
+          depth = 64
+        ),
+        MmuStorageLevel(
+          id = 1,
+          ways = 1,
+          depth = 64
+        )
+      ),
+      priority = 1
+    )
+
+    fetchTpp = MmuPortParameter(
+      readAt = 1,
+      hitsAt = 1,
+      ctrlAt = 1,
+      rspAt = 1
+    )
+
+    lsuTpp = MmuPortParameter(
+      readAt = 1,
+      hitsAt = 1,
+      ctrlAt = 1,
+      rspAt = 1
+    )
+  }
+
+  override def hashCode() = {
+    var hash = 0
+    val md = new StringBuilder()
+    var rand = new Random(0)
+    for(f <- this.getClass.getDeclaredFields){
+      val o = f.get(this)
+      if(o != null) o.asInstanceOf[Any] match {
+        case e: Boolean => md ++= s" $e"
+        case e: Int => md ++= s" $e"
+        case e: Long => md ++= s" $e"
+        case e: BigInt => md ++= s" $e"
+        case e: String => md ++= s" $e"
+        case e : Product => md ++= s" $e"
+        case e => println(s"$e"); ???
+      }
+    }
+    Math.abs(md.toString.hashCode())
+  }
+
+
   def getName() : String = {
     def opt(that : Boolean, v : String) = that.mux(v, "")
     var isa = s"rv${xlen}i"
@@ -343,6 +444,7 @@ class ParamSimple(){
     opt[Int]("dispatcher-at") action { (v, c) => dispatcherAt = v }
     opt[Long]("reset-vector") unbounded() action { (v, c) => resetVector = v }
     opt[Unit]("relaxed-div") action { (v, c) => relaxedDiv = true }
+    opt[Unit]("relaxed-mul-inputs") action { (v, c) => relaxedMulInputs = true }
     opt[Unit]("relaxed-branch") action { (v, c) => relaxedBranch = true }
     opt[Unit]("relaxed-shift") action { (v, c) => relaxedShift = true }
     opt[Unit]("relaxed-src") action { (v, c) => relaxedSrc = true }
@@ -418,54 +520,9 @@ class ParamSimple(){
     opt[Int]("physical-width") action { (v, c) => physicalWidth = v }
     opt[Unit]("mul-keep-src") action { (v, c) => mulKeepSrc = true }
     opt[Unit]("mmu-sync-read") action { (v, c) =>
-      fetchTsp = MmuStorageParameter(
-        levels = List(
-          MmuStorageLevel(
-            id = 0,
-            ways = 2,
-            depth = 64
-          ),
-          MmuStorageLevel(
-            id = 1,
-            ways = 1,
-            depth = 64
-          )
-        ),
-        priority = 0
-      )
-
-      lsuTsp = MmuStorageParameter(
-        levels = List(
-          MmuStorageLevel(
-            id = 0,
-            ways = 2,
-            depth = 64
-          ),
-          MmuStorageLevel(
-            id = 1,
-            ways = 1,
-            depth = 64
-          )
-        ),
-        priority = 1
-      )
-
-      fetchTpp = MmuPortParameter(
-        readAt = 1,
-        hitsAt = 1,
-        ctrlAt = 1,
-        rspAt = 1
-      )
-
-      lsuTpp = MmuPortParameter(
-        readAt = 1,
-        hitsAt = 1,
-        ctrlAt = 1,
-        rspAt = 1
-      )
+      withMmuSyncRead()
     }
   }
-
 
   def plugins(hartId : Int = 0) = pluginsArea(hartId).plugins
   def pluginsArea(hartId : Int = 0) = new Area {
@@ -660,8 +717,8 @@ class ParamSimple(){
 
       lsuHardwarePrefetch match {
         case "none" =>
-        case "nl" => plugins += new lsu.PrefetchNextLinePlugin
-        case "rpt" => plugins += new lsu.PrefetchRptPlugin(
+        case "nl" => plugins += new lsu.PrefetcherNextLinePlugin
+        case "rpt" => plugins += new lsu.PrefetcherRptPlugin(
           sets = 128,
           bootMemClear = bootMemClear
         )
@@ -669,7 +726,7 @@ class ParamSimple(){
     }
 
     if(withMul) {
-      plugins += new MulPlugin(early0, keepMulSrc = mulKeepSrc)
+      plugins += new MulPlugin(early0, keepMulSrc = mulKeepSrc, mulAt = relaxedMulInputs.toInt)
     }
     if(withDiv) {
       plugins += new RsUnsignedPlugin("lane0")

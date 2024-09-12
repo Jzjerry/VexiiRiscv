@@ -26,7 +26,7 @@ abstract class PrefetcherPlugin extends FiberPlugin {
   val io = during build Stream(PrefetchCmd())
 }
 
-class PrefetchNextLinePlugin extends PrefetcherPlugin {
+class PrefetcherNextLinePlugin extends PrefetcherPlugin {
   val logic = during build new Area {
     val lsu = host[LsuService]
     val probe = lsu.lsuCommitProbe
@@ -40,23 +40,23 @@ class PrefetchNextLinePlugin extends PrefetcherPlugin {
 
 
 
-class PrefetchRptPlugin(sets : Int,
-                        bootMemClear : Boolean,
-                        readAt : Int = 0,
-                        tagAt: Int = 1,
-                        ctrlAt: Int = 2,
-                        addAt: Int = 1,
-                        prefetchAt: Int = 1,
-                        tagWidth: Int = 15,
-                        addressWidth: Int = 16,
-                        strideWidth: Int = 12,
-                        blockAheadMax: Int = 4,
-                        scoreMax: Int = 31,
-                        scorePass: Int = 1,
-                        scoreFailShift: Int = 1,
-                        scoreConflict: Int = 2,
-                        scoreOffset: Int = 3,
-                        scoreShift: Int = 0) extends PrefetcherPlugin  with InitService {
+class PrefetcherRptPlugin(sets : Int,
+                          bootMemClear : Boolean,
+                          readAt : Int = 0,
+                          tagAt: Int = 1,
+                          ctrlAt: Int = 2,
+                          addAt: Int = 1,
+                          prefetchAt: Int = 1,
+                          tagWidth: Int = 15,
+                          addressWidth: Int = 16,
+                          strideWidth: Int = 12,
+                          blockAheadMax: Int = 4,
+                          scoreMax: Int = 31,
+                          scorePass: Int = 1,
+                          scoreFailShift: Int = 1,
+                          scoreConflict: Int = 2,
+                          scoreOffset: Int = 3,
+                          scoreShift: Int = 0) extends PrefetcherPlugin  with InitService {
 
   override def initHold(): Bool = bootMemClear.mux(logic.initializer.busy, False)
 
@@ -76,6 +76,7 @@ class PrefetchRptPlugin(sets : Int,
 
     val TAG = Payload(UInt(tagWidth bits))
     val STRIDE = Payload(SInt(strideWidth bits))
+    val STRIDE_EXTENDED = Payload(SInt(addressWidth bits))
     val SCORE = Payload(UInt(log2Up(scoreMax + 1) bits))
     val ADDRESS = Payload(UInt(addressWidth bits))
     val ADVANCE = Payload(UInt(log2Up(blockAheadMax + 1) bits))
@@ -155,11 +156,12 @@ class PrefetchRptPlugin(sets : Int,
     }
     val onTag = new pip.Area(tagAt) {
       TAG_HIT := ENTRY.tag === hashTag(PROBE.pc)
-      STRIDE := S(PROBE.address - ENTRY.address).resized
+      STRIDE_EXTENDED := S(PROBE.address - ENTRY.address).resized
       NEW_BLOCK := (PROBE.address.resized ^ ENTRY.address) >> log2Up(lsu.getBlockSize) =/= 0
     }
     val onCtrl = new pip.Area(ctrlAt){
-      STRIDE_HIT := STRIDE === ENTRY.stride // may need a few additional bits from the address to avoid aliasing
+      STRIDE_HIT := STRIDE_EXTENDED.resized === ENTRY.stride && STRIDE_EXTENDED.dropLow(strideWidth).asBools.map(_ === ENTRY.stride.msb).andR
+      STRIDE := STRIDE_EXTENDED.resized
 
       val unfiltred = cloneOf(order)
       order << unfiltred //.throwWhen(filter.hit)
@@ -189,7 +191,7 @@ class PrefetchRptPlugin(sets : Int,
       unfiltred.unique  := PROBE.store
       unfiltred.from    := advanceSubed+1
       unfiltred.to      := advanceAllowed.min(blockAheadMax).resized
-      unfiltred.stride  := STRIDE.msb.mux(STRIDE min lsu.getBlockSize, STRIDE max lsu.getBlockSize)
+      unfiltred.stride  := STRIDE.msb.mux(STRIDE min -lsu.getBlockSize, STRIDE max lsu.getBlockSize)
 
       when(!TAG_HIT){
         when(STRIDE =/= 0) {

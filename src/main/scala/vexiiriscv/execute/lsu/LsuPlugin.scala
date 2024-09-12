@@ -54,7 +54,7 @@ class LsuPlugin(var layer : LaneLayer,
                 var pmaAt : Int = 1,
                 var ctrlAt: Int = 2,
                 var wbAt : Int = 2,
-                var storeRs2At : Int = 0,
+                var storeRs2At : Int = 0, //Note that currently, it only apply for integer store (not float store)
                 var storeBufferSlots : Int = 0,
                 var storeBufferOps : Int = 0) extends FiberPlugin with DBusAccessService with LsuCachelessBusProvider with LsuService with CmoService{
 
@@ -148,9 +148,13 @@ class LsuPlugin(var layer : LaneLayer,
 
     for(store <- frontend.writingMem ++ amos){
       val op = layer(store)
+      val isInt = store.resources.exists {
+        case RfResource(IntRegFile, RS2) => true
+        case _ => false
+      }
       op.mayFlushUpTo(ctrlAt)
       op.dontFlushFrom(ctrlAt+1)
-      op.addRsSpec(RS2, storeRs2At)
+      op.addRsSpec(RS2, isInt.mux(storeRs2At, 0)) // Only int late usage works (scheduler)
     }
 
     val FENCE = Payload(Bool())
@@ -729,6 +733,7 @@ class LsuPlugin(var layer : LaneLayer,
 
       val abords, skipsWrite = ArrayBuffer[Bool]()
       abords += l1.HAZARD
+      abords += l1.FLUSH_HAZARD
       abords += !l1.FLUSH && onPma.CACHED_RSP.fault
       abords += FROM_LSU && (!isValid || isCancel)
       abords += mmuNeeded && mmuFailure
@@ -745,7 +750,7 @@ class LsuPlugin(var layer : LaneLayer,
       l1.ABORD := abords.orR
       l1.SKIP_WRITE := skipsWrite.orR
 
-      if(flusher != null) when(l1.SEL && l1.FLUSH && (l1.FLUSH_HIT || l1.HAZARD)){
+      if(flusher != null) when(l1.SEL && l1.FLUSH && (l1.FLUSH_HIT || l1.HAZARD || l1.FLUSH_HAZARD)){
         flusher.cmdCounter := l1.MIXED_ADDRESS(log2Up(l1.LINE_BYTES), log2Up(l1.SETS) bits).resized
       }
 

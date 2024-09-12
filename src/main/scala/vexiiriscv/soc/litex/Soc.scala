@@ -277,6 +277,8 @@ class Soc(c : SocConfig) extends Component {
           cache.parameter.cacheBytes = l2Bytes
           cache.parameter.selfFlush = selfFlush
           cache.parameter.readProcessAt = 2+(l2Bytes >= 512*1024).toInt
+//          cache.parameter.generalSlotCount = 12
+//          cache.parameter.downPendingMax = 8
 
           cache.up << cBus
           cache.up.setUpConnection(a = StreamPipe.FULL, c = StreamPipe.FULL, d = StreamPipe.FULL)
@@ -305,6 +307,12 @@ class Soc(c : SocConfig) extends Component {
         )
       ))
       if (c.withDma) Axi4SpecRenamer(dma.bus)
+
+      if(withCoherency && withL2){
+        for (bank <- splited.wc.l2.cache.logic.cache.cache.data.banks) {
+          bank.ram.preventAsBlackBox() // Some synthesis tools have issues inferring efficient layout when byte mask is used.
+        }
+      }
 
 
       println(MemoryConnection.getMemoryTransfers(vexiis(0).dBus))
@@ -447,8 +455,9 @@ object SocGen extends App{
 //  val from = cpu0.reflectBaseType("LsuL1Plugin_logic_c_pip_ctrl_2_up_FORCE_HAZARD") //That big
 //  val to = cpu0.reflectBaseType("FpuCsrPlugin_api_flags_OF")
 
-//  val from = cpu0.reflectBaseType("LsuL1Plugin_logic_refill_slots_0_writebackHazards") //That big
-//  val to = cpu0.reflectBaseType("LsuL1Plugin_logic_refill_slots_0_cmdSent")
+//  val from = cpu0.reflectBaseType("vexiis_0_logic_core_toplevel_execute_ctrl4_up_LsuPlugin_logic_onPma_IO_lane0")
+//  val to = cpu0.reflectBaseType("CsrAccessPlugin_bus_write_halt")
+//  val to = cpu0.reflectBaseType("FpuCsrPlugin_api_flags_NX")
 
 
 
@@ -458,7 +467,7 @@ object SocGen extends App{
 //      case bt : BaseType => drivers += bt
 //    }
 //  }
-////  drivers.foreach(e => println(e.getName()))
+//  drivers.foreach(e => println(e.getName()))
 //  println("******")
 //  println(PathTracer.impl(from, to).report())
 }
@@ -835,7 +844,7 @@ weston --use-pixman
 https://www.brendangregg.com/perf.html
 perf stat  md5sum /home/miaou/readonly/mp3/01-long_distance_calling-metulsky_curse_revisited.mp3
 perf record md5sum /home/miaou/readonly/mp3/01-long_distance_calling-metulsky_curse_revisited.mp3
-perf record -f 99 -g  -e cpu-clock  md5sum /home/miaou/readonly/mp3/01-long_distance_calling-metulsky_curse_revisited.mp
+perf record -g  -e cpu-clock  md5sum /home/miaou/readonly/mp3/01-long_distance_calling-metulsky_curse_revisited.mp
 
 perf report
 perf report --stdio
@@ -907,6 +916,13 @@ node-store-misses or cpu/node-store-misses/
 node-prefetches or cpu/node-prefetches/
 node-prefetch-misses or cpu/node-prefetch-misses/
 
+bluetooth modem
+nmcli connection show
+nmcli connection up "abcd"
+
+pulseaudio --dump-resample-methods
+nano /etc/pulse/daemon.conf
+pacmd list-sink-inputs
 
 
 bluetooth :

@@ -103,7 +103,7 @@ object MiCoAsymPlugin {
     val WIDTH = Payload(AsymDOTPType())
 }
 
-class MiCoAsymPlugin(val layer : LaneLayer, val MaxWidth : Int = 1) 
+class MiCoAsymPlugin(val layer : LaneLayer, val MaxWidth : Int = 8) 
     extends ExecutionUnitElementSimple(layer)  {
 
     val logic = during setup new Logic {

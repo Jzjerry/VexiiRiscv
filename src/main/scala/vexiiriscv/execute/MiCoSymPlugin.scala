@@ -18,7 +18,7 @@ object DOTPType extends SpinalEnum(defaultEncoding=binaryOneHot){
   val W8, W4, W2, W1 = newElement()
 }
 
-object MiCoCompute extends AreaObject {
+object MiCoSymCompute extends AreaObject {
     // Symmetric Precision Dot Product
     def DotProductSym(op_a : Bits, op_b : Bits, bit_width : Int) : SInt = {
         // Let's assume XLEN == 32 here
@@ -109,10 +109,10 @@ class MiCoSymPlugin(val layer : LaneLayer) extends ExecutionUnitElementSimple(la
           val rd = Bits(32 bits)
 
           val compute_res = WIDTH.muxList(
-              List( (W8, MiCoCompute.DotProductSym(rs1, rs2, 8)),
-                    (W4, MiCoCompute.DotProductSym(rs1, rs2, 4)),
-                    (W2, MiCoCompute.DotProductSym(rs1, rs2, 2)),
-                    (W1, MiCoCompute.DotProductSym1Bit(rs1, rs2)))).asBits
+              List( (W8, MiCoSymCompute.DotProductSym(rs1, rs2, 8)),
+                    (W4, MiCoSymCompute.DotProductSym(rs1, rs2, 4)),
+                    (W2, MiCoSymCompute.DotProductSym(rs1, rs2, 2)),
+                    (W1, MiCoSymCompute.DotProductSym1Bit(rs1, rs2)))).asBits
 
           val idx1 = MiCoUtil.CountIndexMSB(rs1)
           val idx2 = MiCoUtil.CountIndexMSB(rs2)

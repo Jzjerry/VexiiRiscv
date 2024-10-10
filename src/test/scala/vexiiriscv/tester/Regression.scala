@@ -76,8 +76,6 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv],
   if (rvm) {
     arch += "m"
     archLinux += "m"
-  }
-  if (rva) {
     arch += "a"
     archLinux += "a"
   }
@@ -373,19 +371,30 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv],
 
 
   val freertos = List(
-    "sp_flop", "blocktim", "integer", "countsem", "EventGroupsDemo", "flop", "QPeek",
+    "integer", "countsem", "EventGroupsDemo", "flop", "QPeek",
     "QueueSet", "recmutex", "semtest", "TaskNotify", "dynamic",
     "GenQTest", "PollQ", "QueueOverwrite", "QueueSetPolling", "test1"
   )
   if(rvm) for(name <- freertos.take(config.freertosCount)){
     val args = newArgs()
-    args.loadElf(new File(nsf,  f"baremetal/freertosDemo/build/${name}/${arch + (arch.endsWith("im").mux("a",""))}/freertosDemo.elf"))
+    var freertosArch = arch
+    if(xlen == 32 && rvf && !rvd) freertosArch = "rv32ima"
+    if(xlen == 64 && rvf && !rvd) freertosArch = "rv64ima"
+    args.loadElf(new File(nsf,  f"baremetal/freertosDemo/build/${name}/${freertosArch + (freertosArch.endsWith("im").mux("a",""))}/freertosDemo.elf"))
     args.failAfter(300000000)
     args.name(s"freertos/$name")
   }
 
   if(config.buildroot && rvm && rva && mmu.nonEmpty) priv.filter(_.p.withSupervisor).foreach{ _ =>
-    val path = s"ext/NaxSoftware/buildroot/images/$archLinux"
+    var arch = s"rv${xlen}ima"
+    xlen match{
+      case 32 => if(rvc) arch += "c"
+      case 64 => {
+        if(rvf && rvd && rvc) arch += "fdc"
+        else if (rvc) arch += "c"
+      }
+    }
+    val path = s"ext/NaxSoftware/buildroot/images/$arch"
     val args = newArgs()
     args.failAfter(10000000000l)
     args.name("buildroot")
@@ -484,6 +493,7 @@ class RegressionSingle(compiled : SimCompiled[VexiiRiscv],
 object RegressionSingle extends App{
   def test(name : String, plugins : => Seq[Hostable], dutArgs : Seq[String], config : RegressionSingleConfig): Unit = {
     val simConfig = SpinalSimConfig()
+//    simConfig.withIVerilog
     simConfig.withFstWave
     simConfig.setTestPath("regression/$COMPILED_tests/$TEST")
     val compiled = SpinalConfig.synchronized(simConfig.compile(VexiiRiscv(plugins).setDefinitionName(s"VexiiRiscv_$name")))
@@ -516,7 +526,11 @@ object RegressionSingle extends App{
     test(param, args, new RegressionSingleConfig().fromEnv())
   }
 
-  test(args)
+  try {
+    test(args)
+  }catch {
+    case e : Throwable => System.exit(1)
+  }
 }
 
 
@@ -524,17 +538,8 @@ class Regression extends MultithreadedFunSuite(sys.env.getOrElse("VEXIIRISCV_REG
 //  FileUtils.deleteQuietly(new File("regression"))
 
   val testsAdded = mutable.LinkedHashSet[String]()
-  def addTest(args: String): Unit = addTest(args.replace("  ", " ").split("\\s+"))
-  def addTest(args: Seq[String]): Unit = {
-    val param = new ParamSimple()
-    new scopt.OptionParser[Unit]("VexiiRiscv") {
-      help("help").text("prints this usage text")
-      param.addOptions(this)
-    }.parse(args, Unit) match {
-      case Some(_) =>
-      case None => throw new Exception("invalid regression test parameters")
-    }
-
+  def addTest(param : ParamSimple, args: String): Unit = addTest(param, args.replace("  ", " ").split("\\s+"))
+  def addTest(param : ParamSimple, args: Seq[String]): Unit = {
     val paramName = param.getName()
     if(testsAdded.contains(paramName)) return
     testsAdded += paramName
@@ -544,22 +549,24 @@ class Regression extends MultithreadedFunSuite(sys.env.getOrElse("VEXIIRISCV_REG
   }
 
 
-  abstract class Dimensions(val name : String){
-    def getRandomPosition(random : Random) : String
+  abstract class Dimensions[T](val name : String){
+    def getRandomPosition(state : T, random : Random) : String
   }
 
-  val dimensions = ArrayBuffer[Dimensions]()
+  val dimensions = ArrayBuffer[Dimensions[ParamSimple]]()
 
-  def Dim(name : String, poses : Seq[String]) = new Dimensions(name) {
-    override def getRandomPosition(random: Random): String = poses.randomPick(random)
+  def Dim(name : String, poses : Seq[String]) = new Dimensions[ParamSimple](name) {
+    override def getRandomPosition(state : ParamSimple, random: Random): String = poses.randomPick(random)
   }
   def addDim(name : String, poses : Seq[String]) = dimensions += Dim(name, poses)
 
-  def addDims(name: String)(poses: Dimensions*) = dimensions += new Dimensions(name) {
-    override def getRandomPosition(random: Random): String = poses.randomPick(random).getRandomPosition(random)
+  def addDims(name: String)(poses: Dimensions[ParamSimple]*) = dimensions += new Dimensions[ParamSimple](name) {
+    override def getRandomPosition(state : ParamSimple, random: Random): String = poses.randomPick(random).getRandomPosition(state, random)
   }
 
 
+
+  addDim("default", List("--with-mul --with-div --performance-counters 4"))
   addDim("lanes", List(1, 2).map(v => s"--lanes $v --decoders $v"))
   addDim("rf", List("--regfile-sync", "--regfile-async"))
   addDim("rfPorts", List("--regfile-infer-ports", "--regfile-dual-ports"))
@@ -614,10 +621,15 @@ class Regression extends MultithreadedFunSuite(sys.env.getOrElse("VEXIIRISCV_REG
   addDim("alignBuf", List("", "--with-aligner-buffer"))
   addDim("dispBuf", List("", "--with-dispatcher-buffer"))
   addDim("btbParam", List("--btb-sets 512 --btb-hash-width 16", "--btb-sets 128 --btb-hash-width 6"))
+  dimensions += new Dimensions[ParamSimple]("fpu") {
+    override def getRandomPosition(state : ParamSimple, random: Random): String = {
+      if(!state.lsuL1Enable) return "" //Don't support the FPU yet TODO
+      return List("", "--with-rvf", "--with-rvf --with-rvd").randomPick(random)
+    }
+  }
 
-  val default = "--with-mul --with-div --performance-counters 4"
 
-  addTest(default)
+//  addTest(default)
   // Add a simple test for each dimensions's positions
 //  for(dim <- dimensions){
 //    for(pos <- dim.getPositions() if pos != "") {
@@ -629,12 +641,22 @@ class Regression extends MultithreadedFunSuite(sys.env.getOrElse("VEXIIRISCV_REG
   val random = new Random(42)
   for(i <- 0 until 50){
     val args = ArrayBuffer[String]()
-    args += default
-    for (dim <- dimensions) {
-      args += dim.getRandomPosition(random)
+    val p = new ParamSimple()
+    val parser = new scopt.OptionParser[Unit]("VexiiRiscv") {
+      help("help").text("prints this usage text")
+      p.addOptions(this)
     }
-    addTest(args.mkString(" "))
+    for (dim <- dimensions) {
+      val arg = dim.getRandomPosition(p, random)
+      parser.parse(arg.replace("  ", " ").split("\\s+").filter(_.nonEmpty), Unit) match {
+        case Some(_) =>
+        case None => throw new Exception("invalid regression test parameters")
+      }
+      args += arg
+    }
+    addTest(p, args.mkString(" "))
   }
 }
 
 //cd $PWD && find . -name FAIL && find . -name PASS | wc -l && find . -name FAIL | wc -l
+//cd $PWD && find . -type d -exec sh -c 'test -f "$0/stdout.log" && ! test -f "$0/PASS"' {} \; -print

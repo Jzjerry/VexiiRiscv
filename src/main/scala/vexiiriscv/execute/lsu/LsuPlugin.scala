@@ -193,6 +193,7 @@ class LsuPlugin(var layer : LaneLayer,
     val FROM_WB = Payload(Bool())
     val FORCE_PHYSICAL = Payload(Bool())
     val FROM_PREFETCH = Payload(Bool())
+    val MMU_FAILURE, MMU_PAGE_FAULT = Payload(Bool())
 
     class L1Waiter extends Area {
       val refill = Reg(l1.WAIT_REFILL)
@@ -467,15 +468,17 @@ class LsuPlugin(var layer : LaneLayer,
       val CACHED_RSP = insert(cached.rsp)
       val IO_RSP = insert(io.rsp)
       val IO = insert(CACHED_RSP.fault && !IO_RSP.fault && !FENCE && !FROM_PREFETCH)
+      val addressExtension = ats.getSignExtension(AddressTranslationPortUsage.LOAD_STORE, srcp.ADD_SUB.asUInt)
+      val FROM_LSU_MSB_FAILED = insert(FROM_LSU && srcp.ADD_SUB.dropLow(Global.MIXED_WIDTH).asBools.map(_ =/= addressExtension).orR)
+      MMU_PAGE_FAULT := tpk.PAGE_FAULT || STORE.mux(!tpk.ALLOW_WRITE, !tpk.ALLOW_READ)
+      MMU_FAILURE := MMU_PAGE_FAULT || tpk.ACCESS_FAULT || tpk.REFILL || tpk.HAZARD || FROM_LSU_MSB_FAILED
     }
 
     val onCtrl = new elp.Execute(ctrlAt) {
       val lsuTrap = False
-      val mmuPageFault = tpk.PAGE_FAULT || STORE.mux(!tpk.ALLOW_WRITE, !tpk.ALLOW_READ)
 
-
-
-      val writeData = CombInit[Bits](elp(IntRegFile, riscv.RS2))
+      val writeData = Bits(Riscv.LSLEN bits)
+      writeData := elp(IntRegFile, riscv.RS2).resized
       if(Riscv.withFpu) when(FLOAT){
         val value = elp(FloatRegFile, riscv.RS2)
         writeData(value.bitsRange) := value
@@ -522,7 +525,7 @@ class LsuPlugin(var layer : LaneLayer,
           val srcZipped = splited.zipWithIndex.filter { case (v, b) => b % (wordBytes / srcSize) == i }
           val src = srcZipped.map(_._1)
           val range = log2Up(wordBytes) - 1 downto log2Up(wordBytes) - log2Up(srcSize)
-          val sel = srcp.ADD_SUB(range).asUInt
+          val sel = l1.MIXED_ADDRESS(range)
           shited(i * 8, 8 bits) := src.read(sel)
         }
         val RESULT = insert(shited)
@@ -544,7 +547,7 @@ class LsuPlugin(var layer : LaneLayer,
         l1.lockPort.address := 0
       }
       val rva = Riscv.RVA.get generate new Area {
-        val srcBuffer = RegNext[Bits](loadData.RESULT)
+        val srcBuffer = RegNext[Bits](loadData.RESULT.resize(XLEN bits))
         val alu = new AtomicAlu(
           op = UOP(29, 3 bits),
           swap = UOP(27),
@@ -555,7 +558,7 @@ class LsuPlugin(var layer : LaneLayer,
         val aluBuffer = RegNext(alu.result)
 
         when(preCtrl.IS_AMO) {
-          writeData := aluBuffer
+          writeData(aluBuffer.bitsRange) := aluBuffer
         }
 
         val delay = History(!elp.isFreezed(), 1 to 2)
@@ -646,7 +649,7 @@ class LsuPlugin(var layer : LaneLayer,
           trapPort.code(1) setWhen (STORE)
         }
 
-        when(mmuPageFault) {
+        when(MMU_PAGE_FAULT) {
           lsuTrap := True
           trapPort.exception := True
           trapPort.code := CSR.MCAUSE_ENUM.LOAD_PAGE_FAULT
@@ -672,7 +675,13 @@ class LsuPlugin(var layer : LaneLayer,
           trapPort.exception := False
           trapPort.code := TrapReason.REDO
         }
-
+        when(onPma.FROM_LSU_MSB_FAILED){
+          lsuTrap := True
+          trapPort.exception := True
+          trapPort.code := CSR.MCAUSE_ENUM.LOAD_ACCESS_FAULT
+          trapPort.code(1) setWhen (STORE)
+          trapPort.code(3) setWhen (!tpk.BYPASS_TRANSLATION)
+        }
         when(preCtrl.MISS_ALIGNED) {
           lsuTrap := True
           trapPort.exception := True
@@ -729,14 +738,13 @@ class LsuPlugin(var layer : LaneLayer,
       }
 
       val mmuNeeded = FROM_LSU || FROM_PREFETCH
-      val mmuFailure = mmuPageFault || tpk.ACCESS_FAULT || tpk.REFILL || tpk.HAZARD
 
       val abords, skipsWrite = ArrayBuffer[Bool]()
       abords += l1.HAZARD
       abords += l1.FLUSH_HAZARD
       abords += !l1.FLUSH && onPma.CACHED_RSP.fault
       abords += FROM_LSU && (!isValid || isCancel)
-      abords += mmuNeeded && mmuFailure
+      abords += mmuNeeded && MMU_FAILURE
       if(withStoreBuffer) abords += wb.loadHazard || !FROM_WB && fenceTrap.valid
 
       skipsWrite += l1.MISS || l1.MISS_UNIQUE
@@ -772,7 +780,7 @@ class LsuPlugin(var layer : LaneLayer,
         assert(dbusAccesses.size == 1)
         val rsp = dbusAccesses.head.rsp
         rsp.valid    := l1.SEL && FROM_ACCESS && !elp.isFreezed()
-        rsp.data     := l1.READ_DATA
+        rsp.data     := loadData.RESULT.resized //loadData.RESULT instead of l1.READ_DATA (because it rv32fd
         rsp.error    := l1.FAULT
         rsp.redo     := traps.l1Failed
         rsp.waitSlot := 0
@@ -803,7 +811,7 @@ class LsuPlugin(var layer : LaneLayer,
       commitProbe.load := l1.LOAD
       commitProbe.store := l1.STORE
       commitProbe.trap := lsuTrap
-      commitProbe.miss := l1.MISS && !l1.HAZARD && !mmuFailure
+      commitProbe.miss := l1.MISS && !l1.HAZARD && !MMU_FAILURE
       commitProbe.io := onPma.IO
       commitProbe.prefetchFailed := FROM_PREFETCH
       commitProbe.pc := Global.PC
@@ -811,7 +819,7 @@ class LsuPlugin(var layer : LaneLayer,
 
     val onWb = new elp.Execute(wbAt){
       iwb.valid := SEL && !FLOAT
-      iwb.payload := onCtrl.loadData.RESULT
+      iwb.payload := onCtrl.loadData.RESULT.resized
 
       if (withRva) when(l1.ATOMIC && !l1.LOAD) {
         iwb.payload(0) := onCtrl.SC_MISS
@@ -820,7 +828,7 @@ class LsuPlugin(var layer : LaneLayer,
 
       fpwb.foreach{p =>
         p.valid := SEL && FLOAT
-        p.payload := onCtrl.loadData.RESULT
+        p.payload := onCtrl.loadData.RESULT.resized
         if(Riscv.RVD) when(SIZE === 2) {
           p.payload(63 downto 32).setAll()
         }

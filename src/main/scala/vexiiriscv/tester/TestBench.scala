@@ -182,6 +182,7 @@ class TestOptions{
   }
 
   def test(dut : VexiiRiscv, onTrace : (=> Unit) => Unit = cb => {}) : Unit = {
+//    traceRvlsLog = true; traceKonata = true; traceWave = true; traceSpikeLog = true; printStats = true;
     val fsmTasks =  mutable.Queue[FsmTask]()
     for(gen <- fsmTasksGen) fsmTasks += gen()
     val cd = dut.clockDomain
@@ -627,6 +628,8 @@ object TestBench extends App{
 //    genConfig.includeSimulation
 
     val simConfig = SpinalSimConfig()
+//    simConfig.withIVerilog
+//    simConfig.withVcdWave
     simConfig.withFstWave
     simConfig.withTestFolder
     simConfig.withConfig(genConfig)

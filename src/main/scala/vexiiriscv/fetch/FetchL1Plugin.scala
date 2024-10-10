@@ -163,6 +163,7 @@ class FetchL1Plugin(var translationStorageParameter: Any,
 
     val banks = for (id <- 0 until bankCount) yield new Area {
       val mem = Mem(Bits(bankWidth bits), bankWordCount)
+      if(bootMemClear) mem.randBoot()
       val write = mem.writePort
       val read = new Area {
         val cmd = Flow(mem.addressType)
@@ -182,6 +183,7 @@ class FetchL1Plugin(var translationStorageParameter: Any,
     }
     val ways = for (id <- 0 until wayCount) yield new Area {
       val mem = Mem.fill(linePerWay)(Tag())
+      if(bootMemClear) mem.randBoot()
       mem.write(waysWrite.address, waysWrite.tag, waysWrite.mask(id))
       val read = new Area {
         val cmd = Flow(mem.addressType)
@@ -478,7 +480,6 @@ class FetchL1Plugin(var translationStorageParameter: Any,
       trapPort.arg.allowOverride() := 0
 
       val allowRefill = !WAYS_HIT && !HAZARD
-
       when(!WAYS_HIT || HAZARD) {
         trapPort.valid := True
         trapPort.exception := False
@@ -509,15 +510,27 @@ class FetchL1Plugin(var translationStorageParameter: Any,
       trapPort.arg(0, 2 bits) := TrapArg.FETCH
       trapPort.arg(2, ats.getStorageIdWidth() bits) := ats.getStorageId(translationStorage)
       when(tpk.REFILL) {
+        allowRefill := False
         trapPort.valid := True
         trapPort.exception := False
         trapPort.code := TrapReason.MMU_REFILL
       }
       when(tpk.HAZARD) {
+        allowRefill := False
         trapPort.valid := True
         trapPort.exception := False
         trapPort.code := TrapReason.REDO
       }
+      when(Fetch.PC_FAULT) {
+        allowRefill := False
+        trapPort.valid := True
+        trapPort.exception := True
+        trapPort.code := CSR.MCAUSE_ENUM.INSTRUCTION_ACCESS_FAULT
+        when(!tpk.BYPASS_TRANSLATION){
+          trapPort.code := CSR.MCAUSE_ENUM.INSTRUCTION_PAGE_FAULT
+        }
+      }
+
 
       refill.start.valid := allowRefill && !trapSent
       refill.start.address := tpk.TRANSLATED

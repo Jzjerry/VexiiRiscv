@@ -236,6 +236,7 @@ class BtbPlugin(var sets : Int,
       flushPort.hartId := HART_ID
 
       pcPort.valid := doIt
+      pcPort.fault := False
       pcPort.pc := pcTarget << Fetch.SLICE_RANGE_LOW
 
       WORD_JUMPED := needIt
@@ -279,6 +280,7 @@ class BtbPlugin(var sets : Int,
       when(busy) {
         counter := counter + 1
         onLearn.port.valid := True
+        onLearn.port.mask.setAll
         onLearn.port.address := counter.resized
         for (data <- onLearn.port.data) {
           data.hash.setAll

@@ -5,7 +5,7 @@ import spinal.core.sim._
 import spinal.lib._
 import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.Global
-import vexiiriscv.Global.{HART_COUNT, TRAP}
+import vexiiriscv.Global.{COMMIT, HART_COUNT, TRAP}
 import vexiiriscv.decode.{Decode, DecodePipelinePlugin, DecoderPlugin}
 import vexiiriscv.execute._
 import vexiiriscv.execute.lsu._
@@ -18,7 +18,7 @@ import vexiiriscv.schedule.{DispatchPlugin, FlushCmd, ReschedulePlugin}
 
 import scala.collection.mutable.ArrayBuffer
 
-class WhiteboxerPlugin extends FiberPlugin{
+class WhiteboxerPlugin(withOutputs : Boolean) extends FiberPlugin{
 
   val logic = during setup new Logic()
   class Logic extends Area{
@@ -26,7 +26,11 @@ class WhiteboxerPlugin extends FiberPlugin{
     val buildBefore = retains(pbp.elaborationLock)
     awaitBuild()
 
-    def wrap[T <: Data](that: T): T = CombInit(that).simPublic
+    def wrap[T <: Data](that: T): T = {
+      val buffered = CombInit(that).simPublic
+      if(withOutputs) out(buffered)
+      buffered
+    }
 
     val fpp = host[FetchPipelinePlugin]
     val dpp = host[DecodePipelinePlugin]
@@ -78,7 +82,7 @@ class WhiteboxerPlugin extends FiberPlugin{
     val withCsr = host.get[CsrAccessPlugin].nonEmpty
     val csr = withCsr.option(new Area {
       val p = host[CsrAccessPlugin].logic
-      val port = Verilator.public(Flow(new Bundle {
+      val access = (Flow(new Bundle {
         val hartId = Global.HART_ID()
         val uopId = Decode.UOP_ID()
         val address = UInt(12 bits)
@@ -87,14 +91,15 @@ class WhiteboxerPlugin extends FiberPlugin{
         val writeDone = Bool()
         val readDone = Bool()
       }))
-      port.valid := p.fsm.regs.fire
-      port.uopId := p.fsm.regs.uopId
-      port.hartId := p.fsm.regs.hartId
-      port.address := U(p.fsm.regs.uop)(Const.csrRange)
-      port.write := p.fsm.regs.onWriteBits
-      port.read := p.fsm.regs.csrValue
-      port.writeDone := p.fsm.regs.write
-      port.readDone := p.fsm.regs.read
+      access.valid := p.fsm.regs.fire
+      access.uopId := p.fsm.regs.uopId
+      access.hartId := p.fsm.regs.hartId
+      access.address := U(p.fsm.regs.uop)(Const.csrRange)
+      access.write := p.fsm.regs.onWriteBits
+      access.read := p.fsm.regs.csrValue
+      access.writeDone := p.fsm.regs.write
+      access.readDone := p.fsm.regs.read
+      val port = wrap(access)
     })
 
     val rfWrites = new Area {
@@ -103,6 +108,23 @@ class WhiteboxerPlugin extends FiberPlugin{
 
     val completions = new Area {
       val ports = host.list[CompletionService].flatMap(cp => cp.getCompletions().map(wrap))
+    }
+
+    val commits = new Area {
+      var lanes = host.list[ExecuteLaneService]
+      val trapAt = host[TrapPlugin].trapAt
+      val ctrls = lanes.map(_.execute(trapAt))
+      case class Commits() extends Bundle{
+        val pc = Global.PC()
+        val age = Execute.LANE_AGE()
+      }
+      val ports = for(i <- 0 until ctrls.size) yield new Area{
+        val oh = ctrls.map(ctrl => ctrl.down.isFiring && ctrl.down(COMMIT) && ctrl.down(Execute.LANE_AGE) === i)
+        val reader = ctrls.reader(oh)
+        val valid = wrap(oh.orR)
+        val pc = wrap(reader(_(Global.PC)))
+        val uop = wrap(reader(_(Decode.UOP)))
+      }
     }
 
     val reschedules = new Area {
@@ -150,7 +172,10 @@ class WhiteboxerPlugin extends FiberPlugin{
         uopId := c(Decode.UOP_ID)
         size := c(AguPlugin.SIZE).resized
         address := c(LsuL1.PHYSICAL_ADDRESS)
-        data := host.find[IntFormatPlugin](_.lane == p.layer.lane).logic.stages.find(_.ctrlLink == c.ctrlLink).get.wb.payload
+        data := host.find[IntFormatPlugin](_.lane == p.layer.lane).logic.stages.find(_.ctrlLink == c.ctrlLink).get.wb.payload.resized
+        if(p.logic.fpwb.nonEmpty) when(p.logic.fpwb.get.valid){
+          data := p.logic.fpwb.get.payload.asSInt.resize(widthOf(data)).asBits
+        }
       })
     }
 

@@ -26,7 +26,7 @@ import scala.util.Random
 
 object ParamSimple{
 
-  def addptionRegion(parser: scopt.OptionParser[Unit], regions : ArrayBuffer[PmaRegion]): Unit = {
+  def addOptionRegion(parser: scopt.OptionParser[Unit], regions : ArrayBuffer[PmaRegion]): Unit = {
     import parser._
     opt[Map[String, String]]("region") unbounded() action { (v, c) =>
       regions += PmaRegionImpl(
@@ -102,9 +102,11 @@ class ParamSimple(){
   var fpuIgnoreSubnormal = false
   var withRvd = false
   var withRvZb = false
+  var withWhiteboxerOutputs = false
   var privParam = PrivilegedParam.base
   var lsuForkAt = 0
   var lsuPmaAt = 0
+  var withHartIdInput = false
   var relaxedBranch = false
   var relaxedShift = false
   var relaxedSrc = true
@@ -195,7 +197,7 @@ class ParamSimple(){
 
 
   def fetchMemDataWidth = 32*decoders max fetchMemDataWidthMin
-  def lsuMemDataWidth = xlen max lsuMemDataWidthMin
+  def lsuMemDataWidth = xlen max lsuMemDataWidthMin max withRvd.mux(64, 0)
   def memDataWidth = List(fetchMemDataWidth, lsuMemDataWidth).max
 
   //  Debug modifiers
@@ -224,7 +226,7 @@ class ParamSimple(){
     lsuL1Ways = 4
     lsuL1RefillCount = 8
     lsuL1WritebackCount = 8
-//    lsuL1Coherency = true
+    lsuL1Coherency = true
 //    lsuStoreBufferSlots = 2
 //    lsuStoreBufferOps = 32
     lsuStoreBufferSlots = 4
@@ -256,7 +258,7 @@ class ParamSimple(){
     privParam.withSupervisor = true
     privParam.withUser = true
     xlen = 64
-    physicalWidth = 38
+//    physicalWidth = 38
 
 
     privParam.withDebug = true
@@ -461,6 +463,8 @@ class ParamSimple(){
     opt[Unit]("with-rvd") action { (v, c) => withRvd = true; withRvf = true }
     opt[Unit]("with-rvc") action { (v, c) => withRvc = true; withAlignerBuffer = true }
     opt[Unit]("with-rvZb") action { (v, c) => withRvZb = true }
+    opt[Unit]("with-whiteboxer-outputs") action { (v, c) => withWhiteboxerOutputs = true }
+    opt[Unit]("with-hart-id-input") action { (v, c) => withHartIdInput = true }
     opt[Unit]("fma-reduced-accuracy") action { (v, c) => fpuFmaFullAccuracy = false }
     opt[Unit]("fpu-ignore-subnormal") action { (v, c) => fpuIgnoreSubnormal = true }
     opt[Unit]("with-aligner-buffer") unbounded() action { (v, c) => withAlignerBuffer = true }
@@ -705,7 +709,7 @@ class ParamSimple(){
       plugins += new LsuL1Plugin(
         lane           = lane0,
         memDataWidth   = lsuMemDataWidth,
-        cpuDataWidth   = xlen,
+        cpuDataWidth   = xlen max withRvd.mux(64, 0),
         refillCount    = lsuL1RefillCount,
         writebackCount = lsuL1WritebackCount,
         setCount       = lsuL1Sets,
@@ -751,7 +755,7 @@ class ParamSimple(){
     plugins += new CsrRamPlugin()
     if(withPerformanceCounters) plugins += new PerformanceCounterPlugin(additionalCounterCount = additionalPerformanceCounters)
     plugins += new CsrAccessPlugin(early0, writeBackKey =  if(lanes == 1) "lane0" else "lane1")
-    plugins += new PrivilegedPlugin(privParam, hartId until hartId+hartCount)
+    plugins += new PrivilegedPlugin(privParam, withHartIdInput.mux(null, hartId until hartId+hartCount))
     plugins += new TrapPlugin(trapAt = intWritebackAt)
     plugins += new EnvPlugin(early0, executeAt = 0)
     if(embeddedJtagTap || embeddedJtagInstruction) plugins += new EmbeddedRiscvJtag(
@@ -838,7 +842,9 @@ class ParamSimple(){
       //      plugins += new execute.fpu.FpuEmbedded()
     }
 
-    plugins += new WhiteboxerPlugin()
+    plugins += new WhiteboxerPlugin(
+      withOutputs = withWhiteboxerOutputs
+    )
   }
 }
 

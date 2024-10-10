@@ -15,6 +15,7 @@ import spinal.core.fiber.Handle
 import spinal.lib.{Flow, KeepAttribute}
 import vexiiriscv.decode.Decode
 import vexiiriscv.fetch.{Fetch, PcPlugin}
+import vexiiriscv.memory.{AddressTranslationPortUsage, AddressTranslationService}
 import vexiiriscv.misc.{PerformanceCounterService, TrapService}
 import vexiiriscv.prediction.Prediction.BRANCH_HISTORY_WIDTH
 import vexiiriscv.prediction.{FetchWordPrediction, HistoryPlugin, HistoryUser, LearnCmd, LearnService, LearnSource, Prediction}
@@ -151,28 +152,36 @@ class BranchPlugin(val layer : LaneLayer,
       val ss = SrcStageables
       val EQ = insert(srcp.SRC1 === srcp.SRC2)
 
+      val btb = withBtb generate new Area {
+        val BAD_TARGET = insert(Prediction.ALIGNED_JUMPED_PC =/= PC_TRUE)
+//        val REAL_TARGET = insert(COND.mux[UInt](PC_TRUE, PC_FALSE))
+      }
+
+      val expectedMsb = host[AddressTranslationService].getSignExtension(AddressTranslationPortUsage.FETCH, srcp.SRC1.asUInt)
+      val MSB_FAILED = insert(BRANCH_CTRL === BranchCtrlEnum.JALR && srcp.SRC1.dropLow(MIXED_WIDTH).asBools.map(_ =/= expectedMsb).orR)
+    }
+
+    val jumpLogic = new el.Execute(jumpAt) {
       val COND = insert(BRANCH_CTRL.mux(
         BranchCtrlEnum.JALR -> True,
         BranchCtrlEnum.JAL -> True,
         BranchCtrlEnum.B -> UOP(14 downto 12).mux[Bool](
-          B"000" ->  EQ,
-          B"001" -> !EQ,
+          B"000" ->  alu.EQ,
+          B"001" -> !alu.EQ,
           M"1-1" -> !srcp.LESS,
           default -> srcp.LESS
         )
       ))
 
       val btb = withBtb generate new Area {
-        val BAD_TARGET = insert(Prediction.ALIGNED_JUMPED_PC =/= PC_TRUE)
         val REAL_TARGET = insert(COND.mux[UInt](PC_TRUE, PC_FALSE))
       }
-    }
 
-    val jumpLogic = new el.Execute(jumpAt) {
-      val wrongCond = withBtb.mux[Bool](Prediction.ALIGNED_JUMPED =/= alu.COND     , alu.COND )
-      val needFix   = withBtb.mux[Bool](wrongCond || alu.COND && alu.btb.BAD_TARGET, wrongCond)
+
+      val wrongCond = withBtb.mux[Bool](Prediction.ALIGNED_JUMPED =/= COND     , COND )
+      val needFix   = withBtb.mux[Bool](wrongCond || COND && alu.btb.BAD_TARGET, wrongCond) || alu.MSB_FAILED
       val doIt = isValid && SEL && needFix
-      val pcTarget = withBtb.mux[UInt](alu.btb.REAL_TARGET, PC_TRUE)
+      val pcTarget = withBtb.mux[UInt](btb.REAL_TARGET, PC_TRUE)
 
 
       val history = historyPort.nonEmpty generate new Area{
@@ -181,7 +190,7 @@ class BranchPlugin(val layer : LaneLayer,
 
         val fromSelf = withSelfHistory generate new Area {
           val state = Reg(Prediction.BRANCH_HISTORY) init (0)
-          val shifted = (state ## alu.COND).dropHigh(1)
+          val shifted = (state ## COND).dropHigh(1)
           when(down.isFiring && SEL && BRANCH_CTRL === BranchCtrlEnum.B) {
             state := shifted
           }
@@ -199,7 +208,7 @@ class BranchPlugin(val layer : LaneLayer,
             }
           }
           when(BRANCH_CTRL === BranchCtrlEnum.B) {
-            shifter \= (shifter ## alu.COND).dropHigh(1)
+            shifter \= (shifter ## COND).dropHigh(1)
           }
           next := shifter
           fetched := Prediction.BRANCH_HISTORY
@@ -207,6 +216,7 @@ class BranchPlugin(val layer : LaneLayer,
       }
 
       pcPort.valid := doIt
+      pcPort.fault := alu.MSB_FAILED
       pcPort.pc := pcTarget
       pcPort.laneAge := Execute.LANE_AGE
 
@@ -222,7 +232,7 @@ class BranchPlugin(val layer : LaneLayer,
       flushPort.laneAge := Execute.LANE_AGE
       flushPort.self := False
 
-      val MISSALIGNED = insert(PC_TRUE(0, Fetch.SLICE_RANGE_LOW bits) =/= 0 && alu.COND)
+      val MISSALIGNED = insert(PC_TRUE(0, Fetch.SLICE_RANGE_LOW bits) =/= 0 && COND)
       if (catchMissaligned) { //Non RVC can trap on missaligned branches
         trapPort.valid := False
         trapPort.exception := True
@@ -249,7 +259,7 @@ class BranchPlugin(val layer : LaneLayer,
       val learn = isLastOfLane.option(Stream(LearnCmd(ls.learnCtxElements.toSeq)))
       learn.foreach { learn =>
         learn.valid := isValid && isReady && !isCancel && pluginsOnLane.map(p => apply(p.SEL)).orR
-        learn.taken := alu.COND
+        learn.taken := COND
         learn.pcTarget := PC_TRUE
         learn.pcOnLastSlice := PC_LAST_SLICE
         learn.isBranch := BRANCH_CTRL === BranchCtrlEnum.B

@@ -24,9 +24,12 @@ class RiscvPlugin(var xlen : Int,
     if(Riscv.RVZbb.isEmpty) Riscv.RVZbb.set(false)
     if(Riscv.RVZbc.isEmpty) Riscv.RVZbc.set(false)
     if(Riscv.RVZbs.isEmpty) Riscv.RVZbs.set(false)
+    if(Riscv.RVV.isEmpty) Riscv.RVV.set(true)
+
     Riscv.XLEN.set(xlen)
     Riscv.FLEN.set(List(Riscv.RVF.get.toInt*32, Riscv.RVD.get.toInt*64).max)
     Riscv.LSLEN.set(List(Riscv.XLEN.get, Riscv.FLEN.get).max)
+    Riscv.VLEN.set(if (Riscv.RVV) 128 else 0) // Default to 128 bits for RVV, can be overridden by the user
     Global.HART_COUNT.set(hartCount)
     Fetch.SLICE_WIDTH.set(if(Riscv.RVC) 16 else 32)
     Fetch.SLICE_BYTES.set(if(Riscv.RVC) 2 else 4)

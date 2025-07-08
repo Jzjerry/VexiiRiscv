@@ -136,3 +136,17 @@ object FloatRegFile extends RegfileSpec with AreaObject {
     resources = List(this -> RS1, this -> RS2, IntRegFile -> RD) :+ FPU
   )
 }
+
+object VectorRegFile extends RegfileSpec with AreaObject {
+  override def sizeArch = 32
+  override def width = Riscv.VLEN
+  override def x0AlwaysZero = true
+  override def getName() = "vector"
+  override def initialValue: BigInt = 0
+
+  def TypeR(key : MaskedLiteral) = SingleDecoding(
+    key = key,
+    resources = List(RS1, RS2, RD).map(this -> _) :+ VPU
+  )
+
+}

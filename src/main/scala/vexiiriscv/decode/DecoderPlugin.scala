@@ -101,8 +101,10 @@ class DecoderPlugin(var decodeAt : Int) extends FiberPlugin with DecoderService 
 
     val NEED_FPU = Payload(Bool())
     val NEED_RM = Payload(Bool())
+    val NEED_VPU = Payload(Bool())
     addMicroOpDecodingDefault(NEED_FPU, False)
     addMicroOpDecodingDefault(NEED_RM, False)
+    addMicroOpDecodingDefault(NEED_VPU, False)
     val encodings = new Area {
       val all = mutable.LinkedHashSet[Masked]()
       val one = Masked(1, 1)
@@ -129,6 +131,7 @@ class DecoderPlugin(var decodeAt : Int) extends FiberPlugin with DecoderService 
           case LQ =>
           case FPU => addMicroOpDecoding(e, NEED_FPU, True)
           case RM => addMicroOpDecoding(e, NEED_RM, True)
+          case VPU => addMicroOpDecoding(e, NEED_VPU, True)
           case vexiiriscv.riscv.SQ =>
         }
       }
@@ -179,6 +182,13 @@ class DecoderPlugin(var decodeAt : Int) extends FiberPlugin with DecoderService 
         val rm = U((instRm === 7) ? csrRm | instRm)
         val enabled = host[PrivilegedPlugin].fpuEnable(0); assert(Global.HART_COUNT.get == 1)
         val triggered = NEED_FPU && !enabled || NEED_RM && rm >= 5
+        when(triggered) {
+          LEGAL := False
+        }
+      }
+
+      val vp = Riscv.RVV.get generate new Area{
+        val triggered = NEED_VPU
         when(triggered) {
           LEGAL := False
         }

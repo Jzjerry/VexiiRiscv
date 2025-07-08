@@ -18,7 +18,7 @@ import vexiiriscv.fetch.{FetchCachelessAxi4Plugin, FetchCachelessPlugin, FetchCa
 import vexiiriscv.memory.{MmuPortParameter, MmuSpec, MmuStorageLevel, MmuStorageParameter, PmpParam, PmpPlugin, PmpPortParameter}
 import vexiiriscv.misc._
 import vexiiriscv.prediction.{LearnCmd, LearnPlugin}
-import vexiiriscv.riscv.{FloatRegFile, IntRegFile}
+import vexiiriscv.riscv.{FloatRegFile, IntRegFile, VectorRegFile}
 import vexiiriscv.schedule.DispatchPlugin
 import vexiiriscv.test.WhiteboxerPlugin
 
@@ -1037,6 +1037,21 @@ class ParamSimple() {
     plugins.foreach {
       case p: DispatchPlugin => p.trapLayer = early0
       case _ =>
+    }
+    val withRvv = true
+    // Vector Extension
+    if (withRvv){
+      plugins += new regfile.RegFilePlugin(
+        spec = riscv.VectorRegFile,
+        physicalDepth = 32,
+        preferedWritePortForInit = "lane0",
+        syncRead = regFileSync,
+        dualPortRam = regFileDualPortRam,
+        regBasedRam = regFileRegBasedRam,
+        maskReadDuringWrite = false
+      )
+      plugins += new WriteBackPlugin(lane0, VectorRegFile, writeAt = 9, allowBypassFrom = allowBypassFrom.max(2)) //Max 2 to save area on not so important instructions
+      plugins += new execute.vpu.VpuAddPlugin(early0)
     }
 
     // FPU

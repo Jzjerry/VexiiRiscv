@@ -14,7 +14,7 @@ import spinal.lib.misc.{Elf, TilelinkClintFiber}
 import spinal.lib.misc.plic.TilelinkPlicFiber
 import spinal.lib.system.tag.MemoryConnection
 import vexiiriscv.execute.cfu.{CfuPlugin, CfuTest}
-import vexiiriscv.soc.TilelinkVexiiRiscvFiber
+import vexiiriscv.soc.{TilelinkVexiiRiscvFiber, TilelinkCfuFiber}
 
 
 // Lets define our SoC toplevel
@@ -79,10 +79,14 @@ class MicroSoc(p : MicroSocParam) extends Component {
       val cpuClint = cpu.bind(clint) // Timer interrupt + time reference + stop time connection
     }
 
-    val cfu = p.vexii.withCfu generate (Fiber patch new Area {
+    val cfu = new TilelinkCfuFiber()
+    mainBus << cfu.bus
+    cfu.bus.setDownConnection(a = StreamPipe.S2M) 
+
+    val cfuConnect = p.vexii.withCfu generate (Fiber patch new Area {
       val cpuCfuBus = cpu.logic.core.host[CfuPlugin].logic.bus
-      val cfu = CfuTest() // If instead you want to export the CFU bus to the io, replace with : val bus = cpuCfuBus.toIo()
-      cfu.io.bus << cpuCfuBus
+      val cfuCfuBus = cfu.logic.cfuBus
+      cfuCfuBus << cpuCfuBus
     })
 
     val patcher = Fiber patch new Area {

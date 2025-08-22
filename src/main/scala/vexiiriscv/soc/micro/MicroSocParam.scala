@@ -19,6 +19,7 @@ class MicroSocParam {
   vexii.lsuPmaAt = 1
   vexii.lsuForkAt = 1
   vexii.relaxedBranch = true
+  vexii.withCfu = true
   socCtrl.withJtagTap = true
   legalize()
 

@@ -83,6 +83,46 @@ object MicroSocSim extends App{
       elf.load(dut.system.ram.thread.logic.mem, 0x80000000l, true)
       if(p.withSpiFlash) elf.loadArray(spiFlash.content, 0x20000000l, true)
       probe.backends.foreach(_.loadElf(0, elfFile))
+
+      val withPass = elf.getELFSymbol("pass") != null
+      val withFail = elf.getELFSymbol("fail") != null
+      if (withPass || withFail) {
+        def trunkPc(pc : Long) = (p.vexii.xlen == 32).mux(pc & 0xFFFFFFFFl, pc)
+        val passSymbol = if(withPass) trunkPc(elf.getSymbolAddress("pass")) else -1
+        val failSymbol = if(withFail) trunkPc(elf.getSymbolAddress("fail")) else -1
+
+        // Wait for UART TX to be idle for a few bit times before ending the sim
+        def finishAfterUartIdle(success: Boolean, msg: String = null): Unit = fork {
+          val txPin        = dut.system.peripheral.uart.logic.uart.txd
+          val bitPeriod    = uartBaudPeriod            // in sim time units
+          val idleBits     = 16                        // how long line must stay idle (in bit times)
+          val sampleStep   = (bitPeriod max 8L) / 8    // sampling step to detect activity
+          val idleWindow   = bitPeriod * idleBits
+          val timeoutGuard = bitPeriod * 200000        // safety timeout (~200k bits)
+          val startTime    = simTime()
+
+          var lastLevel    = txPin.toBoolean
+          var lastChange   = simTime()
+
+          // observe line; when no edges for idleWindow, consider UART drained
+          while (simTime() - lastChange < idleWindow && simTime() - startTime < timeoutGuard) {
+            val lvl = txPin.toBoolean
+            if (lvl != lastLevel) {
+              lastLevel  = lvl
+              lastChange = simTime()
+            }
+            sleep(sampleStep)
+          }
+
+          if (success) simSuccess()
+          else simFailure(Option(msg).getOrElse("Software reached the fail symbol :("))
+        }
+        var endScheduled = false
+        probe.commitsCallbacks += { (hartId, pc) =>
+          if (!endScheduled && pc == passSymbol) { endScheduled = true; finishAfterUartIdle(success = true) }
+          if (!endScheduled && pc == failSymbol) { endScheduled = true; finishAfterUartIdle(success = false, "Software reached the fail symbol :(") }
+        }
+      }
     }
   }
 }

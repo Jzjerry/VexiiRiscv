@@ -7,7 +7,7 @@ import java.io.File
 
 // This class will carry all the parameter of the SoC
 class MicroSocParam {
-  var ramBytes = 16 KiB
+  var ramBytes = 1024 KiB
   var ramElf = Option.empty[File]
   val vexii = new ParamSimple()
   var demoPeripheral = Option.empty[PeripheralDemoParam]

@@ -64,6 +64,24 @@ object TilelinkCfuFiber {
         CFU_CFU_ID_W = 4,
         CFU_STATE_INDEX_NUM = 5
       )
+
+    def elemwiseAdd(opa: Bits, opb: Bits, elemWidth: Int) : Bits = {
+        require(opa.getBitsWidth == opb.getBitsWidth, "Operands must have the same bit width")
+        require(opa.getBitsWidth % elemWidth == 0, "Element width must divide the operand width")
+        val veca = opa.subdivideIn(elemWidth bits)
+        val vecb = opb.subdivideIn(elemWidth bits)
+        val vecRes = veca.zip(vecb).map { case (a, b) => a.asSInt + b.asSInt }
+        vecRes.asBits
+    }
+
+    def reduceDotProd(opa: Bits, opb: Bits, elemWidth: Int): Bits = {
+        require(opa.getBitsWidth == opb.getBitsWidth, "Operands must have the same bit width")
+        require(opa.getBitsWidth % elemWidth == 0, "Element width must divide the operand width")
+        val veca = opa.subdivideIn(elemWidth bits)
+        val vecb = opb.subdivideIn(elemWidth bits)
+        val dotProd = veca.zip(vecb).map { case (a, b) => a.asSInt * b.asSInt }.reduce(_ + _)
+        dotProd.asBits.resized
+    }
 }
 
 class TilelinkCfuFiber() extends Area {
@@ -83,8 +101,17 @@ class TilelinkCfuFiber() extends Area {
       /* Handle CFU Default Logic */
       cfuBus.rsp.arbitrationFrom(cfuBus.cmd)
       cfuBus.rsp.response_id := cfuBus.cmd.request_id
-      cfuBus.rsp.outputs(0) := ~(cfuBus.cmd.inputs(0) & cfuBus.cmd.inputs(1))
+
       if (cfuParam.CFU_WITH_STATUS) cfuBus.rsp.status := B"000" 
+
+      val cfuRes = cfuBus.rsp.outputs(0)
+      val func3 = cfuBus.cmd.function_id.asBits
+
+      cfuRes := func3.mux(
+        B"000" -> elemwiseAdd(cfuBus.cmd.inputs(0), cfuBus.cmd.inputs(1), 8),
+        B"001" -> reduceDotProd(cfuBus.cmd.inputs(0), cfuBus.cmd.inputs(1), 8),
+        default -> B(0)
+      )
 
       /* Handle Tilelink Default Logic */
       dBus.a.opcode  := tilelink.Opcode.A.GET

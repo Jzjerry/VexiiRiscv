@@ -64,24 +64,56 @@ object TilelinkCfuFiber {
         CFU_CFU_ID_W = 4,
         CFU_STATE_INDEX_NUM = 5
       )
+}
 
-    def elemwiseAdd(opa: Bits, opb: Bits, elemWidth: Int) : Bits = {
-        require(opa.getBitsWidth == opb.getBitsWidth, "Operands must have the same bit width")
-        require(opa.getBitsWidth % elemWidth == 0, "Element width must divide the operand width")
-        val veca = opa.subdivideIn(elemWidth bits)
-        val vecb = opb.subdivideIn(elemWidth bits)
-        val vecRes = veca.zip(vecb).map { case (a, b) => a.asSInt + b.asSInt }
-        vecRes.asBits
-    }
+class DemoCfu(cfuParam: CfuBusParameter, busParam: BusParameter) extends Component {
 
-    def reduceDotProd(opa: Bits, opb: Bits, elemWidth: Int): Bits = {
-        require(opa.getBitsWidth == opb.getBitsWidth, "Operands must have the same bit width")
-        require(opa.getBitsWidth % elemWidth == 0, "Element width must divide the operand width")
-        val veca = opa.subdivideIn(elemWidth bits)
-        val vecb = opb.subdivideIn(elemWidth bits)
-        val dotProd = veca.zip(vecb).map { case (a, b) => a.asSInt * b.asSInt }.reduce(_ + _)
-        dotProd.asBits.resized
-    }
+  def elemwiseAdd(opa: Bits, opb: Bits, elemWidth: Int) : Bits = {
+      require(opa.getBitsWidth == opb.getBitsWidth, "Operands must have the same bit width")
+      require(opa.getBitsWidth % elemWidth == 0, "Element width must divide the operand width")
+      val veca = opa.subdivideIn(elemWidth bits)
+      val vecb = opb.subdivideIn(elemWidth bits)
+      val vecRes = veca.zip(vecb).map { case (a, b) => a.asSInt + b.asSInt }
+      vecRes.asBits
+  }
+  def reduceDotProd(opa: Bits, opb: Bits, elemWidth: Int): Bits = {
+      require(opa.getBitsWidth == opb.getBitsWidth, "Operands must have the same bit width")
+      require(opa.getBitsWidth % elemWidth == 0, "Element width must divide the operand width")
+      val veca = opa.subdivideIn(elemWidth bits)
+      val vecb = opb.subdivideIn(elemWidth bits)
+      val dotProd = veca.zip(vecb).map { case (a, b) => a.asSInt * b.asSInt }.reduce(_ + _)
+      dotProd.asBits.resized
+  }
+
+  val io = new Bundle {
+    val bus = slave(CfuBus(cfuParam))
+    val dBus = master(tilelink.Bus(busParam))
+  }
+  io.bus.rsp.arbitrationFrom(io.bus.cmd)
+  io.bus.rsp.response_id := io.bus.cmd.request_id
+
+  if (cfuParam.CFU_WITH_STATUS) io.bus.rsp.status := B"000" 
+
+  val cfuRes = Bits(32 bits)
+  val func3 = io.bus.cmd.function_id.asBits
+
+  cfuRes := func3.mux(
+    B"000" -> elemwiseAdd(io.bus.cmd.inputs(0), io.bus.cmd.inputs(1), 8),
+    B"001" -> reduceDotProd(io.bus.cmd.inputs(0), io.bus.cmd.inputs(1), 8),
+    default -> B(0)
+  )
+  io.bus.rsp.outputs(0) := cfuRes
+
+  io.dBus.a.opcode  := tilelink.Opcode.A.GET
+  io.dBus.a.param   := 0
+  io.dBus.a.source  := 0
+  io.dBus.a.data    := 0
+  io.dBus.a.address := 0
+  io.dBus.a.mask    := B"1111"
+  io.dBus.a.size    := 3 // 32 bits
+  io.dBus.a.corrupt := False
+  io.dBus.a.valid := False
+  io.dBus.d.ready := False
 }
 
 class TilelinkCfuFiber() extends Area {
@@ -89,40 +121,18 @@ class TilelinkCfuFiber() extends Area {
   import TilelinkCfuFiber._
 
   val bus = Node.down()
-  val cfuParam = getCfuBusParameters
   val dBus = bus.bus
 
   val logic = Fiber build new Area{
       bus.m2s forceParameters getM2sParameters(TilelinkCfuFiber.this)
       bus.s2m.supported load tilelink.S2mSupport.none()
 
+      val cfuParam = getCfuBusParameters
+
       val cfuBus = CfuBus(cfuParam)
 
-      /* Handle CFU Default Logic */
-      cfuBus.rsp.arbitrationFrom(cfuBus.cmd)
-      cfuBus.rsp.response_id := cfuBus.cmd.request_id
-
-      if (cfuParam.CFU_WITH_STATUS) cfuBus.rsp.status := B"000" 
-
-      val cfuRes = cfuBus.rsp.outputs(0)
-      val func3 = cfuBus.cmd.function_id.asBits
-
-      cfuRes := func3.mux(
-        B"000" -> elemwiseAdd(cfuBus.cmd.inputs(0), cfuBus.cmd.inputs(1), 8),
-        B"001" -> reduceDotProd(cfuBus.cmd.inputs(0), cfuBus.cmd.inputs(1), 8),
-        default -> B(0)
-      )
-
-      /* Handle Tilelink Default Logic */
-      dBus.a.opcode  := tilelink.Opcode.A.GET
-      dBus.a.param   := 0
-      dBus.a.source  := 0
-      dBus.a.data    := 0
-      dBus.a.address := 0
-      dBus.a.mask    := B"1111"
-      dBus.a.size    := 3 // 32 bits
-      dBus.a.corrupt := False
-      dBus.a.valid := False
-      dBus.d.ready := False
+      val cfu = new DemoCfu(cfuParam, dBus.p)
+      cfu.io.bus <> cfuBus
+      cfu.io.dBus <> dBus
   }
 }

@@ -14,3 +14,6 @@
 [submodule "ext/SpinalHDL"]
 	path = ext/SpinalHDL
 	url = https://github.com/SpinalHDL/SpinalHDL.git
+[submodule "vexii_docs"]
+	path = vexii_docs
+	url = https://github.com/SpinalHDL/VexiiRiscv-RTD.git

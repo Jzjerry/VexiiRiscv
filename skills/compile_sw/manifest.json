@@ -1,0 +1,15 @@
+{
+  "name": "Compile RISC-V Software",
+  "version": "1.0.0",
+  "description": "Compile RISC-V ELF executables for VexiiRiscv using the sw/ build system",
+  "trigger_words": ["compile riscv", "build elf", "riscv gcc", "create firmware"],
+  "category": "software",
+  "author": "VexiiRiscv Agent",
+  "commands": [
+    {
+      "name": "Build Software",
+      "description": "Compile RISC-V software using make",
+      "syntax": "cd sw && make"
+    }
+  ]
+}

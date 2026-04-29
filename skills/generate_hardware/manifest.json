@@ -1,0 +1,15 @@
+{
+  "name": "VexiiRiscv Hardware Generation",
+  "version": "1.0.0",
+  "description": "Generate Verilog hardware from VexiiRiscv using SBT and SpinalHDL",
+  "trigger_words": ["generate hardware", "generate verilog", "build vexii riscv", "create vexii design"],
+  "category": "hardware",
+  "author": "VexiiRiscv Agent",
+  "commands": [
+    {
+      "name": "Generate Hardware",
+      "description": "Generate VexiiRiscv Verilog from Scala sources",
+      "syntax": "sbt \"Test/runMain vexiiriscv.Generate [options]\""
+    }
+  ]
+}

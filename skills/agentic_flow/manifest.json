@@ -1,0 +1,15 @@
+{
+  "name": "VexiiRiscv Agentic Flow",
+  "version": "1.0.0",
+  "description": "Complete agentic workflow for creating custom RISC-V instructions: hardware design, software compilation, and simulation validation",
+  "trigger_words": ["agentic flow", "full custom instruction", "end-to-end validation", "create custom opcode", "test custom instruction"],
+  "category": "workflow",
+  "author": "VexiiRiscv Agent",
+  "commands": [
+    {
+      "name": "Test Custom Instruction",
+      "description": "Run full agentic flow: compile software and simulate custom instruction",
+      "syntax": "./scripts/test_custom.sh"
+    }
+  ]
+}

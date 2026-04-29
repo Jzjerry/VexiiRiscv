@@ -1,0 +1,15 @@
+{
+  "name": "VexiiRiscv Parameters",
+  "version": "1.0.0",
+  "description": "Complete reference for VexiiRiscv generation and simulation parameters",
+  "trigger_words": ["vexii parameters", "vexii options", "generation options", "cpu configuration"],
+  "category": "configuration",
+  "author": "VexiiRiscv Agent",
+  "commands": [
+    {
+      "name": "List Parameters",
+      "description": "Show all available VexiiRiscv parameters",
+      "syntax": "sbt \"Test/runMain vexiiriscv.Generate --help\""
+    }
+  ]
+}

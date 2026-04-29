@@ -1,0 +1,20 @@
+{
+  "name": "VexiiRiscv Custom Instruction",
+  "version": "1.0.0",
+  "description": "Create custom RISC-V instruction plugins for VexiiRiscv with hardware and software co-design",
+  "trigger_words": ["custom instruction", "custom plugin", "simd add", "new opcode", "vexii plugin"],
+  "category": "development",
+  "author": "VexiiRiscv Agent",
+  "commands": [
+    {
+      "name": "Generate with Custom Plugin",
+      "description": "Generate Verilog with custom instruction plugin",
+      "syntax": "sbt \"runMain vexiiriscv.execute.VexiiMyCustomGen\""
+    },
+    {
+      "name": "Simulate Custom Instruction",
+      "description": "Run simulation testing custom instruction",
+      "syntax": "sbt \"runMain vexiiriscv.execute.VexiiMyCustomSim --load-elf <elf> --no-rvls-check\""
+    }
+  ]
+}

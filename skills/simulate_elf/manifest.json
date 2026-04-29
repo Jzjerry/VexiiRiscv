@@ -1,0 +1,15 @@
+{
+  "name": "VexiiRiscv Simulation",
+  "version": "1.0.0",
+  "description": "Run Verilator-based simulation with RISC-V ELF executables",
+  "trigger_words": ["simulate vexii", "run simulation", "load elf", "verilator simulation"],
+  "category": "simulation",
+  "author": "VexiiRiscv Agent",
+  "commands": [
+    {
+      "name": "Run Simulation",
+      "description": "Run VexiiRiscv simulation with ELF file",
+      "syntax": "sbt \"Test/runMain vexiiriscv.tester.TestBench --load-elf <elf> [options]\""
+    }
+  ]
+}

@@ -84,6 +84,7 @@ class FpuUnpackerPlugin(val layer : LaneLayer,
 
     val f64 = FORMAT -> FpuFormat.DOUBLE
     val f32 = FORMAT -> FpuFormat.FLOAT
+    val f16 = FORMAT -> FpuFormat.HALF
 
     i2f(Rvfd.FCVT_S_WU, 32, false, f32)
     i2f(Rvfd.FCVT_S_W , 32, true , f32)
@@ -97,6 +98,14 @@ class FpuUnpackerPlugin(val layer : LaneLayer,
       if (Riscv.XLEN.get == 64) {
         i2f(Rvfd.FCVT_D_LU, 64, false, f64)
         i2f(Rvfd.FCVT_D_L , 64, true , f64)
+      }
+    }
+    if (Riscv.RVZfh) {
+      i2f(Rvzfh.FCVT_H_WU, 32, false, f16)
+      i2f(Rvzfh.FCVT_H_W , 32, true , f16)
+      if (Riscv.XLEN.get == 64) {
+        i2f(Rvzfh.FCVT_H_LU, 64, false, f16)
+        i2f(Rvzfh.FCVT_H_L , 64, true , f16)
       }
     }
 
@@ -191,6 +200,11 @@ class FpuUnpackerPlugin(val layer : LaneLayer,
           val exponent = input(23, 8 bits).asUInt
           val sign = input(31)
         }
+        val f16 = p.rvfhmin generate new Area {
+          val mantissa = input(0, 10 bits).asUInt
+          val exponent = input(10, 5 bits).asUInt
+          val sign = input(15)
+        }
         val f64 = p.rvd generate new Area {
           val mantissa = input(0, 52 bits).asUInt
           val exponent = input(52, 11 bits).asUInt
@@ -203,7 +217,7 @@ class FpuUnpackerPlugin(val layer : LaneLayer,
         val IS_SUBNORMAL = insert(expZero && !manZero)
         val recodedExpSub = SInt(p.exponentWidth + 1 bits)
 
-        p.whenDouble(p.FORMAT) {
+        def assignF64() = {
           RS_PRE_NORM.sign := f64.sign
           RS_PRE_NORM.mantissa.raw := B(f64.mantissa)
           RS_PRE_NORM.quiet := f64.mantissa.msb
@@ -212,7 +226,8 @@ class FpuUnpackerPlugin(val layer : LaneLayer,
           expZero := f64.exponent === 0
           expOne := f64.exponent.andR
           recodedExpSub := -p.exponentF64One + 1
-        } {
+        }
+        def assignF32() = {
           RS_PRE_NORM.sign := f32.sign
           RS_PRE_NORM.quiet := f32.mantissa.msb
           RS_PRE_NORM.mantissa.raw := B(f32.mantissa << (if (p.rvd) 29 else 0))
@@ -221,6 +236,39 @@ class FpuUnpackerPlugin(val layer : LaneLayer,
           expZero := f32.exponent === 0
           expOne := f32.exponent.andR
           recodedExpSub := -p.exponentF32One + 1
+        }
+        def assignF16() = {
+          RS_PRE_NORM.sign := f16.sign
+          RS_PRE_NORM.quiet := f16.mantissa.msb
+          RS_PRE_NORM.mantissa.raw := B(f16.mantissa << (p.mantissaWidth - 10))
+          RS_PRE_NORM.exponent := f16.exponent.resize(p.exponentWidth) - p.exponentF16One
+          manZero := f16.mantissa === 0
+          expZero := f16.exponent === 0
+          expOne := f16.exponent.andR
+          recodedExpSub := -p.exponentF16One + 1
+        }
+        if(p.rvd && p.rvfhmin) {
+          when(p.FORMAT === FpuFormat.DOUBLE) {
+            assignF64()
+          } elsewhen(p.FORMAT === FpuFormat.HALF) {
+            assignF16()
+          } otherwise {
+            assignF32()
+          }
+        } else if(p.rvd) {
+          when(p.FORMAT === FpuFormat.DOUBLE) {
+            assignF64()
+          } otherwise {
+            assignF32()
+          }
+        } else if(p.rvfhmin) {
+          when(p.FORMAT === FpuFormat.HALF) {
+            assignF16()
+          } otherwise {
+            assignF32()
+          }
+        } else {
+          assignF32()
         }
         RS_PRE_NORM.mode := (expOne ## expZero).mux(
           default -> FloatMode.NORMAL(),
@@ -256,8 +304,10 @@ class FpuUnpackerPlugin(val layer : LaneLayer,
           layer.lane.freezeWhen(freezeIt)
         }
 
-        val badBoxing = p.rvd generate new Area {
-          val HIT = insert(p.FORMAT === FpuFormat.FLOAT && !input(63 downto 32).andR)
+        val badBoxing = (p.rvd || p.rvfhmin) generate new Area {
+          val hitFloat = if(p.rvd) p.FORMAT === FpuFormat.FLOAT && !input(63 downto 32).andR else False
+          val hitHalf = if(p.rvfhmin) p.FORMAT === FpuFormat.HALF && !input(Riscv.FLEN.get-1 downto 16).andR else False
+          val HIT = insert(hitFloat || hitHalf)
           when(HIT) { //This kinda create a long combinatoral path
             RS.setNanQuiet
             RS.sign := False

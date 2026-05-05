@@ -21,6 +21,8 @@ class FpuXxPlugin(val layer : LaneLayer,
   val p = FpuUtils
 
   val SEL = Payload(Bool())
+  val TARGET_HALF = Payload(Bool())
+  val TARGET_DOUBLE = Payload(Bool())
 
   val logic = during setup new Area{
     val fup = host[FpuUnpackerPlugin]
@@ -48,16 +50,33 @@ class FpuXxPlugin(val layer : LaneLayer,
       packPort.uopsAt += spec -> packAt
     }
 
-    assert(Riscv.RVD.get)
-    add(Rvfd.FCVT_D_S, FORMAT -> FpuFormat.FLOAT)
-    add(Rvfd.FCVT_S_D, FORMAT -> FpuFormat.DOUBLE)
+    layer.lane.setDecodingDefault(TARGET_HALF, False)
+    layer.lane.setDecodingDefault(TARGET_DOUBLE, False)
+    if(Riscv.RVD.get) {
+      add(Rvfd.FCVT_D_S, FORMAT -> FpuFormat.FLOAT, TARGET_DOUBLE -> True)
+      add(Rvfd.FCVT_S_D, FORMAT -> FpuFormat.DOUBLE)
+    }
+    if(Riscv.RVZfhmin) {
+      add(Rvzfh.FCVT_S_H, FORMAT -> FpuFormat.HALF)
+      add(Rvzfh.FCVT_H_S, FORMAT -> FpuFormat.FLOAT, TARGET_HALF -> True)
+      if(Riscv.RVD.get) {
+        add(Rvzfh.FCVT_D_H, FORMAT -> FpuFormat.HALF, TARGET_DOUBLE -> True)
+        add(Rvzfh.FCVT_H_D, FORMAT -> FpuFormat.DOUBLE, TARGET_HALF -> True)
+      }
+    }
     uopLock.release()
 
     val RS1_FP = fup(RS1)
 
     val onPack = new layer.Execute(packAt) {
       packPort.cmd.at(0) := isValid && SEL
-      packPort.cmd.format :=  (FORMAT === FpuFormat.FLOAT).mux(FpuFormat.DOUBLE, FpuFormat.FLOAT)
+      packPort.cmd.format := FpuFormat.FLOAT
+      if(Riscv.RVD.get) when(TARGET_DOUBLE) {
+        packPort.cmd.format := FpuFormat.DOUBLE
+      }
+      if(Riscv.RVZfhmin) when(TARGET_HALF) {
+        packPort.cmd.format := FpuFormat.HALF
+      }
       packPort.cmd.roundMode := FpuUtils.ROUNDING
       packPort.cmd.hartId := Global.HART_ID
       packPort.cmd.uopId := Decode.UOP_ID

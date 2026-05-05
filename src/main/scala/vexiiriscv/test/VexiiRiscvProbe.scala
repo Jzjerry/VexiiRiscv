@@ -215,6 +215,8 @@ class VexiiRiscvProbe(cpu : VexiiRiscv, kb : Option[konata.Backend], var withRvl
         if (get(Riscv.RVF)) isa += "F"
         if (get(Riscv.RVD)) isa += "D"
         if (get(Riscv.RVC)) isa += "C"
+        if (get(Riscv.RVZfhmin) && !get(Riscv.RVZfh)) isa += "_zfhmin"
+        if (get(Riscv.RVZfh)) isa += "_zfh"
         if (get(Riscv.RVZba)) isa += "_zba"
         if (get(Riscv.RVZbb)) isa += "_zbb"
         if (get(Riscv.RVZbc)) isa += "_zbc"

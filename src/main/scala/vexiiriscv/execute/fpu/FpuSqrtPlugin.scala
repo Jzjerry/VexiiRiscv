@@ -49,10 +49,14 @@ class FpuSqrtPlugin(val layer : LaneLayer,
 
     val f64 = FORMAT -> FpuFormat.DOUBLE
     val f32 = FORMAT -> FpuFormat.FLOAT
+    val f16 = FORMAT -> FpuFormat.HALF
 
     add(Rvfd.FSQRT_S, f32)
     if(Riscv.RVD) {
       add(Rvfd.FSQRT_D, f64)
+    }
+    if(Riscv.RVZfh) {
+      add(Rvzfh.FSQRT_H, f16)
     }
 
     uopLock.release()

@@ -79,3 +79,50 @@ object Rvfd extends AreaObject {
   val FSW                = TypeSSQ(M"-----------------010-----0100111")
   val FSD                = TypeSSQ(M"-----------------011-----0100111")
 }
+
+object Rvzfh extends AreaObject{
+  import FloatRegFile._
+
+  // Zfhmin: minimal support for half-precision
+  val FLH                = TypeILQ(M"-----------------001-----0000111")
+  val FSH                = TypeSSQ(M"-----------------001-----0100111")
+
+  val FCVT_S_H           = TypeR1(M"010000000010-------------1010011")
+  val FCVT_H_S           = TypeR1_RM(M"010001000000-------------1010011")
+  val FCVT_D_H           = TypeR1(M"010000100010-------------1010011")
+  val FCVT_H_D           = TypeR1_RM(M"010001000001-------------1010011")
+
+  val FMV_X_H            = TypeF2I(M"111001000000-----000-----1010011")
+  val FMV_H_X            = TypeI2F(M"111101000000-----000-----1010011")
+
+  // Zfh: full support for half-precision computation
+  val FCVT_H_W           = TypeI2F_RM(M"110101000000-------------1010011")
+  val FCVT_H_WU          = TypeI2F_RM(M"110101000001-------------1010011")
+  val FCVT_H_L           = TypeI2F_RM(M"110101000010-------------1010011")
+  val FCVT_H_LU          = TypeI2F_RM(M"110101000011-------------1010011")
+  val FCVT_W_H           = TypeF2I_RM(M"110001000000-------------1010011")
+  val FCVT_WU_H          = TypeF2I_RM(M"110001000001-------------1010011")
+  val FCVT_L_H           = TypeF2I_RM(M"110001000010-------------1010011")
+  val FCVT_LU_H          = TypeF2I_RM(M"110001000011-------------1010011")
+
+  val FADD_H             = TypeR_RM(M"0000010------------------1010011")
+  val FSUB_H             = TypeR_RM(M"0000110------------------1010011")
+  val FMUL_H             = TypeR_RM(M"0001010------------------1010011")
+  val FDIV_H             = TypeR_RM(M"0001110------------------1010011")
+  val FSGNJ_H            = TypeR(M"0010010----------000-----1010011")
+  val FSGNJN_H           = TypeR(M"0010010----------001-----1010011")
+  val FSGNJX_H           = TypeR(M"0010010----------010-----1010011")
+  val FMIN_H             = TypeR(M"0010110----------000-----1010011")
+  val FMAX_H             = TypeR(M"0010110----------001-----1010011")
+  val FSQRT_H            = TypeR1_RM(M"010111000000-------------1010011")
+
+  val FCLASS_H           = TypeF2I(M"111001000000-----001-----1010011")
+  val FMADD_H            = TypeR3_RM(M"-----10------------------1000011")
+  val FMSUB_H            = TypeR3_RM(M"-----10------------------1000111")
+  val FNMSUB_H           = TypeR3_RM(M"-----10------------------1001011")
+  val FNMADD_H           = TypeR3_RM(M"-----10------------------1001111")
+
+  val FLE_H              = TypeFCI(M"1010010----------000-----1010011")
+  val FLT_H              = TypeFCI(M"1010010----------001-----1010011")
+  val FEQ_H              = TypeFCI(M"1010010----------010-----1010011")
+}

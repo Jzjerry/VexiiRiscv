@@ -5,7 +5,7 @@ import spinal.lib.misc.pipeline._
 import spinal.lib.misc.plugin.{FiberPlugin, PluginHost}
 import vexiiriscv.Global
 import vexiiriscv.decode.Decode
-import vexiiriscv.riscv.{Const, MicroOp, Riscv, Rvfd, Rvi}
+import vexiiriscv.riscv.{Const, MicroOp, Riscv, Rvfd, Rvi, Rvzfh}
 import vexiiriscv.riscv.Riscv._
 import vexiiriscv.execute._
 
@@ -52,6 +52,7 @@ class AguFrontend(
   if (XLEN.get == 64) writingRf ++= List(Rvi.LD, Rvi.LWU)
 
   val writeRfFloat = ArrayBuffer[MicroOp]()
+  if (RVZfhmin) writeRfFloat ++= List(Rvzfh.FLH)
   if (RVF) writeRfFloat ++= List(Rvfd.FLW)
   if (RVD) writeRfFloat ++= List(Rvfd.FLD)
   writingRf ++= writeRfFloat
@@ -64,6 +65,7 @@ class AguFrontend(
   for (store <- writingMem) add(store).srcs(storeOps).decode(dec(STORE -> True))
   if (RVF) writingMem += add(Rvfd.FSW).srcs(storeOps).decode(dec(STORE -> True, FLOAT -> True)).uop
   if (RVD) writingMem += add(Rvfd.FSD).srcs(storeOps).decode(dec(STORE -> True, FLOAT -> True)).uop
+  if (RVZfhmin) writingMem += add(Rvzfh.FSH).srcs(storeOps).decode(dec(STORE -> True, FLOAT -> True)).uop
 
   // Atomic stuff
   val amos = RVA.get generate new Area {

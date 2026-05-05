@@ -81,10 +81,14 @@ class FpuMulPlugin(val layer : LaneLayer, p : FpuMulParam) extends FiberPlugin{
 
     val f64 = FORMAT -> FpuFormat.DOUBLE
     val f32 = FORMAT -> FpuFormat.FLOAT
+    val f16 = FORMAT -> FpuFormat.HALF
 
     mul(Rvfd.FMUL_S, f32)
     if(Riscv.RVD) {
       mul(Rvfd.FMUL_D, f64)
+    }
+    if(Riscv.RVZfh) {
+      mul(Rvzfh.FMUL_H, f16)
     }
 
     if(withFma){
@@ -97,6 +101,12 @@ class FpuMulPlugin(val layer : LaneLayer, p : FpuMulParam) extends FiberPlugin{
         fma(Rvfd.FMSUB_D , f64, SUB1 -> False, SUB2 -> True)
         fma(Rvfd.FNMSUB_D, f64, SUB1 -> True , SUB2 -> False)
         fma(Rvfd.FNMADD_D, f64, SUB1 -> True , SUB2 -> True)
+      }
+      if (Riscv.RVZfh) {
+        fma(Rvzfh.FMADD_H , f16, SUB1 -> False, SUB2 -> False)
+        fma(Rvzfh.FMSUB_H , f16, SUB1 -> False, SUB2 -> True )
+        fma(Rvzfh.FNMSUB_H, f16, SUB1 -> True , SUB2 -> False)
+        fma(Rvzfh.FNMADD_H, f16, SUB1 -> True , SUB2 -> True)
       }
     }
 

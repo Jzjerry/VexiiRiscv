@@ -481,6 +481,8 @@ class ParamSimple() {
   def withRvd = checkISA("f", "d")
   def withRvc = checkISA("c")
   def withRvcbm = checkISA("zicbom")
+  def withRvZfhmin = checkISA("zfhmin") || checkISA("zfh")
+  def withRvZfh = checkISA("zfh")
   def withRvZknAes = checkISA("zkne") || checkISA("zknd")
   def withRvZba = checkISA("zba")
   def withRvZbb = checkISA("zbb")
@@ -512,6 +514,8 @@ class ParamSimple() {
       addISA("zba", "zbb", "zbc", "zbs")
       removeISA("b")
     }
+    if(withRvZfh) addISA("zfhmin", "f")
+    if(withRvZfhmin) addISA("f")
 
     if(privParam.imsicInterrupts > 0) addISA("smaia", "ssaia")
     if(withSxaia) addISA("smcsrind", "sscsrind")
@@ -540,6 +544,8 @@ class ParamSimple() {
     if (withRvf) isa += "f"
     if (withRvd) isa += "d"
     if (withRvc) isa += "c"
+    if (withRvZfhmin && !withRvZfh) isa += "Zfhmin"
+    if (withRvZfh) isa += "Zfh"
     if (withRvZba) isa += "Zba"
     if (withRvZbb) isa += "Zbb"
     if (withRvZbc) isa += "Zbc"
@@ -612,6 +618,8 @@ class ParamSimple() {
     opt[Unit]("with-rva") action { (v, c) => addISA("a") }
     opt[Unit]("with-rvf") action { (v, c) => addISA("f") }
     opt[Unit]("with-rvd") action { (v, c) => addISA("f", "d") }
+    opt[Unit]("with-rvZfhmin") action { (v, c) => addISA("zfhmin", "f") }
+    opt[Unit]("with-rvZfh") action { (v, c) => addISA("zfh", "zfhmin", "f") }
     opt[Unit]("with-rvc") action { (v, c) => addISA("c") }
     opt[Unit]("with-rvZb") action { (v, c) => addISA("zba", "zbb", "zbc", "zbs") }
     opt[Unit]("with-rvZba") action { (v, c) => addISA("zba") }
@@ -755,7 +763,7 @@ class ParamSimple() {
 
     val intWritebackAt = 2 //Alias for "trap at" as well
 
-    plugins += new riscv.RiscvPlugin(xlen, hartCount, rvf = withRvf, rvd = withRvd, rvc = withRvc, rve = withRve)
+    plugins += new riscv.RiscvPlugin(xlen, hartCount, rvf = withRvf, rvd = withRvd, rvzfhmin = withRvZfhmin, rvzfh = withRvZfh, rvc = withRvc, rve = withRve)
     withMmu match {
       case false => plugins += new vexiiriscv.memory.StaticTranslationPlugin(physicalWidth)
       case true => plugins += new vexiiriscv.memory.MmuPlugin(
@@ -1170,7 +1178,7 @@ class ParamSimple() {
       plugins += new execute.fpu.FpuCmpPlugin(early0)
       plugins += new execute.fpu.FpuF2iPlugin(early0)
       plugins += new execute.fpu.FpuMvPlugin(early0, floatWbAt = 2)
-      if(withRvd) plugins += new execute.fpu.FpuXxPlugin(early0)
+      if(withRvd || withRvZfhmin) plugins += new execute.fpu.FpuXxPlugin(early0)
       plugins += new execute.fpu.FpuDivPlugin(early0)
       plugins += new execute.fpu.FpuPackerPlugin(lane0, ignoreSubnormal = fpuIgnoreSubnormal, wbAt = fpuWbAt)
     }

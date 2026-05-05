@@ -426,6 +426,9 @@ class LsuCachelessPlugin(var layer : LaneLayer,
       fpwb.foreach{p =>
         p.valid := SEL && FLOAT
         p.payload := rspShifted.resized
+        if(Riscv.RVZfhmin) when(SIZE === 1) {
+          p.payload(Riscv.FLEN.get-1 downto 16).setAll()
+        }
         if(Riscv.RVD) when(SIZE === 2) {
           p.payload(63 downto 32).setAll()
         }

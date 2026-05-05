@@ -6,7 +6,7 @@ import spinal.lib.misc.plugin.FiberPlugin
 import vexiiriscv.Global
 import vexiiriscv.decode.Decode
 import vexiiriscv.execute._
-import vexiiriscv.execute.fpu.FpuUtils.{FORMAT, muxDouble}
+import vexiiriscv.execute.fpu.FpuUtils.FORMAT
 import vexiiriscv.riscv._
 
 
@@ -52,9 +52,15 @@ class FpuMvPlugin(val layer : LaneLayer,
 
     val f64 = FORMAT -> FpuFormat.DOUBLE
     val f32 = FORMAT -> FpuFormat.FLOAT
+    val f16 = FORMAT -> FpuFormat.HALF
 
     add(Rvfd.FMV_W_X, f32, SEL_FLOAT -> True)
     add(Rvfd.FMV_X_W, f32, SEL_INT   -> True)
+    if (Riscv.RVZfhmin) {
+      add(Rvzfh.FMV_H_X, f16, SEL_FLOAT -> True)
+      add(Rvzfh.FMV_X_H, f16, SEL_INT   -> True)
+      iwbp.signExtend(iwb, layer(Rvzfh.FMV_X_H), 16)
+    }
     if (Riscv.XLEN.get == 64) {
       iwbp.signExtend(iwb, layer(Rvfd.FMV_X_W), 32)
       if (Riscv.RVD) {
@@ -72,12 +78,18 @@ class FpuMvPlugin(val layer : LaneLayer,
 
     val onFloatWb = new layer.Execute(floatWbAt) {
       fwb.valid := SEL_FLOAT
-      fwb.payload(31 downto 0) := up(layer.lane(IntRegFile, RS1))(31 downto 0)
-      if(Riscv.RVD.get) {
-        fwb.payload(63 downto 32) := (Riscv.XLEN.get == 32).mux(
-          B"xFFFFFFFF",
-          muxDouble(FORMAT)(up(layer.lane(IntRegFile, RS1))(63 downto 32))(B"xFFFFFFFF")
-        )
+      fwb.payload.setAll()
+      if(Riscv.RVD.get && Riscv.XLEN.get == 64) when(FORMAT === FpuFormat.DOUBLE) {
+        fwb.payload(63 downto 0) := up(layer.lane(IntRegFile, RS1))(63 downto 0)
+      }
+      if(Riscv.RVZfhmin.get) {
+        when(FORMAT === FpuFormat.HALF) {
+          fwb.payload(15 downto 0) := up(layer.lane(IntRegFile, RS1))(15 downto 0)
+        } otherwise {
+          fwb.payload(31 downto 0) := up(layer.lane(IntRegFile, RS1))(31 downto 0)
+        }
+      } else {
+        fwb.payload(31 downto 0) := up(layer.lane(IntRegFile, RS1))(31 downto 0)
       }
     }
 
